@@ -36,13 +36,25 @@ let botInitialized = false;
 
 async function startServer() {
   try {
-    console.log('Inicializando NexusBOT...');
+    console.log('═══════════════════════════════════════════');
+    console.log('🚀 Inicializando NexusBOT...');
+    console.log('═══════════════════════════════════════════');
+    
+    // Aguardar um pouco antes de inicializar para garantir que tudo está pronto
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
     await initializeBot();
     botInitialized = true;
-    console.log('Bot inicializado com sucesso!');
+    console.log('✅ Bot inicializado com sucesso!');
+    console.log('📱 Aguardando QR Code ser gerado...');
+    console.log('💡 Acesse o painel e vá na aba "QR Code" para visualizar');
+    console.log('💡 O QR Code será exibido automaticamente quando gerado');
   } catch (error) {
-    console.error('Erro ao inicializar bot:', error);
-    console.log('Servidor iniciado, mas bot não conectado. Tente reiniciar.');
+    console.error('❌ Erro ao inicializar bot:', error);
+    console.error('Detalhes:', error.message);
+    console.log('⚠️  Servidor iniciado, mas bot não conectado.');
+    console.log('💡 Tente reiniciar o servidor ou verificar os logs.');
+    console.log('💡 Se o erro persistir, verifique se o Chrome está instalado e se há processos do navegador rodando.');
   }
 
   app.listen(PORT, () => {

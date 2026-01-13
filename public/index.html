@@ -201,9 +201,18 @@
                                 <li>Toque em <strong>Conectar um aparelho</strong></li>
                                 <li>Escaneie o QR Code acima</li>
                             </ol>
-                            <button class="btn-primary" id="btnRefreshQR">
-                                <i class="fas fa-sync-alt"></i> Atualizar QR Code
-                            </button>
+                            <div class="qr-actions">
+                                <button class="btn-primary" id="btnRefreshQR">
+                                    <i class="fas fa-sync-alt"></i> Atualizar QR Code
+                                </button>
+                                <button class="btn-danger" id="btnDisconnect">
+                                    <i class="fas fa-sign-out-alt"></i> Desconectar WhatsApp
+                                </button>
+                            </div>
+                            <div class="connection-status" id="connectionStatus">
+                                <i class="fas fa-circle"></i>
+                                <span id="connectionStatusText">Verificando conexão...</span>
+                            </div>
                         </div>
                     </div>
                 </div>

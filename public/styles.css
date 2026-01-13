@@ -1196,6 +1196,125 @@ body {
     transform: translateY(0);
 }
 
+/* QR Code Styles */
+.qr-code-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+    padding: 40px 20px;
+}
+
+.qr-code-box {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+    min-width: 300px;
+    min-height: 300px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.qr-code-box img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+}
+
+.qr-loading {
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+.qr-loading i {
+    font-size: 48px;
+    margin-bottom: 16px;
+    color: var(--primary-color);
+}
+
+.qr-loading p {
+    font-size: 16px;
+    margin: 8px 0;
+}
+
+.qr-connected {
+    text-align: center;
+    color: var(--success-color);
+}
+
+.qr-connected i {
+    font-size: 64px;
+    margin-bottom: 16px;
+    color: var(--success-color);
+}
+
+.qr-connected p {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 8px 0;
+}
+
+.qr-instructions {
+    background: var(--bg-tertiary);
+    padding: 24px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    max-width: 500px;
+    width: 100%;
+}
+
+.qr-instructions h3 {
+    font-size: 18px;
+    margin-bottom: 16px;
+    color: var(--text-primary);
+}
+
+.qr-instructions ol {
+    margin-left: 20px;
+    margin-bottom: 20px;
+    color: var(--text-secondary);
+    line-height: 1.8;
+}
+
+.qr-instructions li {
+    margin-bottom: 8px;
+}
+
+.qr-actions {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.qr-actions .btn-primary,
+.qr-actions .btn-danger {
+    flex: 1;
+    min-width: 150px;
+}
+
+.connection-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: var(--bg-primary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    font-size: 14px;
+}
+
+.connection-status i {
+    font-size: 10px;
+    animation: pulse 2s infinite;
+}
+
+.connection-status i.fa-circle {
+    color: var(--success-color);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .header-content {

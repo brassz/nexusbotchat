@@ -20,21 +20,49 @@ let qrCodeListeners = [];
 export async function initializeBot() {
   sessionName = process.env.WHATSAPP_SESSION_NAME || 'nexusbot';
 
+  // Se já existe um cliente, não inicializar novamente
+  if (client) {
+    console.log('⚠️  Bot já está inicializado. Use disconnectBot() primeiro se quiser reinicializar.');
+    return client;
+  }
+
   try {
+    // Matar processos do navegador antes de inicializar
+    await killBrowserProcesses();
+    
+    console.log(`🚀 Inicializando bot com sessão: ${sessionName}`);
+    console.log(`📁 Diretório de tokens: ${process.cwd()}/tokens/${sessionName}`);
+    
     client = await wppconnect.create({
       session: sessionName,
       catchQR: (base64Qr, asciiQR) => {
-        console.log('Escaneie o QR Code:');
+        console.log('═══════════════════════════════════════════');
+        console.log('📱 QR CODE GERADO - ESCANEIE COM O WHATSAPP');
+        console.log('═══════════════════════════════════════════');
         console.log(asciiQR);
+        console.log('═══════════════════════════════════════════');
         // Armazenar QR Code para API
         currentQRCode = base64Qr;
+        console.log('✅ QR Code armazenado (tamanho base64):', base64Qr ? base64Qr.length : 0);
         // Notificar listeners
-        qrCodeListeners.forEach(listener => listener(base64Qr));
+        qrCodeListeners.forEach(listener => {
+          try {
+            listener(base64Qr);
+          } catch (error) {
+            console.error('Erro ao notificar listener do QR Code:', error);
+          }
+        });
       },
       statusFind: (statusSession, session) => {
         console.log('Status da sessão:', statusSession);
         if (statusSession === 'isLogged') {
           console.log('Bot conectado com sucesso!');
+          currentQRCode = null; // Limpar QR Code quando logado
+          qrCodeListeners.forEach(listener => listener(null)); // Notificar listeners
+        } else if (statusSession === 'notLogged' || statusSession === 'browserClose') {
+          console.log('Bot desconectado. Novo QR Code pode ser necessário.');
+          currentQRCode = null;
+          qrCodeListeners.forEach(listener => listener(null));
         }
       },
       headless: true,
@@ -292,5 +320,164 @@ export function onQRCodeChange(callback) {
  */
 export function removeQRCodeListener(callback) {
   qrCodeListeners = qrCodeListeners.filter(listener => listener !== callback);
+}
+
+/**
+ * Desconecta o bot WhatsApp
+ */
+export async function disconnectBot() {
+  try {
+    if (client) {
+      console.log('Desconectando bot e fechando navegador...');
+      
+      // Fechar o navegador primeiro
+      try {
+        if (client.browser) {
+          console.log('Fechando navegador...');
+          const pages = await client.browser.pages();
+          for (const page of pages) {
+            try {
+              await page.close();
+            } catch (e) {
+              // Ignorar erros ao fechar páginas
+            }
+          }
+          
+          if (typeof client.browser.close === 'function') {
+            await client.browser.close();
+            console.log('Navegador fechado com sucesso');
+          }
+        }
+      } catch (browserError) {
+        console.log('Erro ao fechar navegador:', browserError.message);
+      }
+      
+      // Tentar usar logoutSession primeiro, se não existir, usar logout
+      try {
+        if (typeof client.logoutSession === 'function') {
+          await client.logoutSession();
+        } else if (typeof client.logout === 'function') {
+          await client.logout();
+        }
+      } catch (logoutError) {
+        console.log('Erro ao fazer logout (pode ser normal):', logoutError.message);
+      }
+      
+      // Limpar referências
+      client = null;
+      currentQRCode = null;
+      
+      // Notificar listeners
+      qrCodeListeners.forEach(listener => {
+        try {
+          listener(null);
+        } catch (e) {
+          // Ignorar erros nos listeners
+        }
+      });
+      
+      // Aguardar um pouco para garantir que tudo foi fechado
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      console.log('✅ Bot desconectado com sucesso');
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error('Erro ao desconectar bot:', error);
+    // Mesmo com erro, limpar referências
+    client = null;
+    currentQRCode = null;
+    qrCodeListeners.forEach(listener => {
+      try {
+        listener(null);
+      } catch (e) {
+        // Ignorar erros
+      }
+    });
+    throw error;
+  }
+}
+
+/**
+ * Verifica se o bot está conectado
+ */
+export function isBotConnected() {
+  return client !== null;
+}
+
+/**
+ * Mata processos do navegador relacionados à sessão
+ */
+async function killBrowserProcesses() {
+  try {
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+    
+    console.log('🔪 Matando processos do navegador...');
+    
+    // Tentar matar processos do Chrome/Chromium relacionados à sessão
+    const commands = [
+      `pkill -f "chrome.*nexusbot" || true`,
+      `pkill -f "chromium.*nexusbot" || true`,
+      `pkill -f "chrome.*${sessionName}" || true`,
+      `pkill -f "chromium.*${sessionName}" || true`
+    ];
+    
+    for (const cmd of commands) {
+      try {
+        await execAsync(cmd);
+      } catch (e) {
+        // Ignorar erros (processo pode não existir)
+      }
+    }
+    
+    console.log('✅ Processos do navegador finalizados');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  } catch (error) {
+    console.log('⚠️  Erro ao matar processos do navegador:', error.message);
+  }
+}
+
+/**
+ * Reinicializa o bot (desconecta e reconecta)
+ */
+export async function restartBot() {
+  try {
+    console.log('═══════════════════════════════════════════');
+    console.log('🔄 Iniciando reinicialização do bot...');
+    console.log('═══════════════════════════════════════════');
+    
+    // Desconectar se estiver conectado
+    if (client) {
+      console.log('Desconectando bot atual...');
+      await disconnectBot();
+    } else {
+      // Mesmo sem cliente, tentar matar processos do navegador
+      console.log('Nenhum cliente ativo, matando processos do navegador...');
+      await killBrowserProcesses();
+    }
+    
+    // Limpar QR Code anterior
+    currentQRCode = null;
+    
+    // Aguardar mais tempo para garantir que tudo foi fechado
+    console.log('⏳ Aguardando 5 segundos para garantir que tudo foi fechado...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    
+    // Reinicializar bot
+    console.log('🚀 Reinicializando bot...');
+    await initializeBot();
+    
+    console.log('✅ Bot reinicializado com sucesso!');
+    console.log('📱 QR Code será gerado em breve...');
+    return true;
+  } catch (error) {
+    console.error('❌ Erro ao reinicializar bot:', error);
+    // Tentar matar processos do navegador em caso de erro
+    await killBrowserProcesses();
+    throw error;
+  }
 }
 

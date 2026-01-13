@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs-extra';
 import { fileURLToPath } from 'url';
 import { getOverdueAndDueTodayLoans, getLoansByDueDate } from '../services/loanService.js';
-import { sendMessagesToOverdueClients, sendMessagesByDueDate, sendMessage, sendAudio, getQRCode } from '../bot/whatsappBot.js';
+import { sendMessagesToOverdueClients, sendMessagesByDueDate, sendMessage, sendAudio, getQRCode, disconnectBot, isBotConnected, restartBot } from '../bot/whatsappBot.js';
 import { generateMessage } from '../services/messageService.js';
 import { v4 as uuidv4 } from 'uuid';
 import { getAvailableCompanies } from '../config/database.js';
@@ -247,18 +247,94 @@ router.get('/preview-message', async (req, res) => {
 router.get('/qr-code', async (req, res) => {
   try {
     const qrCode = getQRCode();
+    const isConnected = isBotConnected();
     
-    if (!qrCode) {
+    console.log('GET /api/qr-code - QR Code:', qrCode ? 'Existe' : 'Não existe', '| Conectado:', isConnected);
+    
+    if (!qrCode && !isConnected) {
       return res.json({ 
         success: false, 
         qrCode: null, 
-        message: 'QR Code ainda não foi gerado. Aguarde...' 
+        isConnected: false,
+        message: 'QR Code ainda não foi gerado. Aguarde o bot inicializar...' 
       });
     }
 
-    res.json({ success: true, qrCode });
+    if (isConnected && !qrCode) {
+      return res.json({ 
+        success: true, 
+        qrCode: null, 
+        isConnected: true,
+        message: 'WhatsApp já está conectado' 
+      });
+    }
+
+    if (qrCode) {
+      console.log('Retornando QR Code (tamanho base64):', qrCode.length);
+      return res.json({ success: true, qrCode, isConnected: false });
+    }
+
+    res.json({ 
+      success: false, 
+      qrCode: null, 
+      isConnected: false,
+      message: 'QR Code não disponível' 
+    });
   } catch (error) {
     console.error('Erro ao obter QR Code:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/bot/status
+ * Retorna o status de conexão do bot
+ */
+router.get('/bot/status', (req, res) => {
+  try {
+    const isConnected = isBotConnected();
+    const qrCode = getQRCode();
+    
+    res.json({ 
+      success: true, 
+      isConnected,
+      hasQRCode: qrCode !== null
+    });
+  } catch (error) {
+    console.error('Erro ao verificar status do bot:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/bot/disconnect
+ * Desconecta o bot WhatsApp
+ */
+router.post('/bot/disconnect', async (req, res) => {
+  try {
+    const success = await disconnectBot();
+    
+    if (success) {
+      res.json({ success: true, message: 'Bot desconectado com sucesso' });
+    } else {
+      res.json({ success: false, message: 'Bot já estava desconectado' });
+    }
+  } catch (error) {
+    console.error('Erro ao desconectar bot:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/bot/restart
+ * Reinicia o bot (desconecta e reconecta)
+ */
+router.post('/bot/restart', async (req, res) => {
+  try {
+    await restartBot();
+    res.json({ success: true, message: 'Bot reiniciado com sucesso. Novo QR Code será gerado.' });
+  } catch (error) {
+    console.error('Erro ao reiniciar bot:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -383,101 +459,184 @@ router.post('/messages/send-selected-staged', async (req, res) => {
 });
 
 /**
- * Função para enviar mensagens em etapas
+ * Função para enviar mensagens em etapas com intercalação
+ * Estratégia: Enviar 2 áudios (delay 5min), depois 1 texto (delay 3min), repetir
  */
 async function sendStagedMessages(processId, loans) {
   const process = sendingProcesses.get(processId);
   if (!process) return;
 
-  const AUDIO_DELAY = 2 * 60 * 1000; // 2 minutos em milissegundos
+  const AUDIO_DELAY = 5 * 60 * 1000; // 5 minutos em milissegundos
+  const TEXT_DELAY = 3 * 60 * 1000;  // 3 minutos em milissegundos
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
   const audioDir = path.join(__dirname, '..', '..', 'public', 'audios');
   const audioFile = path.join(audioDir, 'mensagem.mp3');
   const hasAudio = fs.existsSync(audioFile);
 
-  // ETAPA 1: Enviar áudios
-  process.status = 'sending_audio';
+  // Separar empréstimos para áudio e texto
+  const audioQueue = [...loans];
+  const textQueue = [...loans];
   
-  for (let i = 0; i < loans.length; i++) {
-    if (process.stopped) {
-      process.status = 'stopped';
-      return;
-    }
+  let audioIndex = 0;
+  let textIndex = 0;
+  let audioCount = 0; // Contador para alternar: 2 áudios, 1 texto
 
-    const loan = loans[i];
-    process.audioCurrent = i + 1;
+  process.status = 'sending_audio';
 
-    if (!loan.client || !loan.client.phone) {
-      process.audioFailed++;
-      continue;
-    }
+  // Intercalar envios: 2 áudios, depois 1 texto, depois 2 áudios, etc.
+  while ((audioIndex < audioQueue.length || textIndex < textQueue.length) && !process.stopped) {
+    // Enviar 2 áudios primeiro
+    if (audioCount < 2 && audioIndex < audioQueue.length) {
+      const loan = audioQueue[audioIndex];
+      process.audioCurrent = audioIndex + 1;
+      process.status = 'sending_audio';
 
-    if (hasAudio) {
-      try {
-        const success = await sendAudio(loan.client.phone, audioFile);
-        if (success) {
-          process.audioSent++;
+      if (loan.client && loan.client.phone) {
+        if (hasAudio) {
+          try {
+            console.log(`Enviando áudio ${audioIndex + 1}/${audioQueue.length} para ${loan.client.phone}`);
+            const success = await sendAudio(loan.client.phone, audioFile);
+            if (success) {
+              process.audioSent++;
+            } else {
+              process.audioFailed++;
+            }
+          } catch (error) {
+            console.error(`Erro ao enviar áudio para ${loan.client.phone}:`, error);
+            process.audioFailed++;
+          }
         } else {
-          process.audioFailed++;
+          // Se não tem áudio, marcar como enviado (pula)
+          process.audioSent++;
         }
-      } catch (error) {
-        console.error(`Erro ao enviar áudio para ${loan.client.phone}:`, error);
+      } else {
         process.audioFailed++;
       }
+
+      audioIndex++;
+      audioCount++;
+
+      // Delay de 5 minutos entre áudios (sempre que houver próximo áudio na sequência)
+      if (audioIndex < audioQueue.length && audioCount < 2 && !process.stopped) {
+        const delayMinutes = AUDIO_DELAY / 1000 / 60;
+        console.log(`⏳ Aguardando ${delayMinutes} minutos antes do próximo áudio...`);
+        await new Promise(resolve => setTimeout(resolve, AUDIO_DELAY));
+      }
+    } 
+    // Depois enviar 1 texto
+    else if (textIndex < textQueue.length) {
+      const loan = textQueue[textIndex];
+      process.textCurrent = textIndex + 1;
+      process.status = 'sending_text';
+
+      if (loan.client && loan.client.phone) {
+        try {
+          console.log(`Enviando texto ${textIndex + 1}/${textQueue.length} para ${loan.client.phone}`);
+          const message = generateMessage(loan, loan.client);
+          const success = await sendMessage(loan.client.phone, message, false); // false = não enviar áudio
+
+          if (success) {
+            process.textSent++;
+          } else {
+            process.textFailed++;
+          }
+        } catch (error) {
+          console.error(`Erro ao enviar texto para ${loan.client.phone}:`, error);
+          process.textFailed++;
+        }
+      } else {
+        process.textFailed++;
+      }
+
+      textIndex++;
+      audioCount = 0; // Resetar contador para enviar mais 2 áudios
+
+      // Delay de 3 minutos entre textos (antes de voltar a enviar áudios)
+      if (audioIndex < audioQueue.length && !process.stopped) {
+        const delayMinutes = TEXT_DELAY / 1000 / 60;
+        console.log(`⏳ Aguardando ${delayMinutes} minutos antes do próximo ciclo (2 áudios)...`);
+        await new Promise(resolve => setTimeout(resolve, TEXT_DELAY));
+      }
     } else {
-      // Se não tem áudio, marcar como enviado (pula)
-      process.audioSent++;
+      // Se não há mais nada para enviar, sair do loop
+      break;
+    }
+  }
+
+  // Se sobrou algum áudio ou texto, enviar o restante
+  // Enviar áudios restantes
+  while (audioIndex < audioQueue.length && !process.stopped) {
+    const loan = audioQueue[audioIndex];
+    process.audioCurrent = audioIndex + 1;
+    process.status = 'sending_audio';
+
+    if (loan.client && loan.client.phone) {
+      if (hasAudio) {
+        try {
+          console.log(`Enviando áudio restante ${audioIndex + 1}/${audioQueue.length} para ${loan.client.phone}`);
+          const success = await sendAudio(loan.client.phone, audioFile);
+          if (success) {
+            process.audioSent++;
+          } else {
+            process.audioFailed++;
+          }
+        } catch (error) {
+          console.error(`Erro ao enviar áudio para ${loan.client.phone}:`, error);
+          process.audioFailed++;
+        }
+      } else {
+        process.audioSent++;
+      }
+    } else {
+      process.audioFailed++;
     }
 
-    // Delay de 2 minutos entre áudios (exceto no último)
-    if (i < loans.length - 1 && !process.stopped) {
+    audioIndex++;
+
+    if (audioIndex < audioQueue.length && !process.stopped) {
+      console.log(`Aguardando ${AUDIO_DELAY / 1000 / 60} minutos antes do próximo áudio...`);
       await new Promise(resolve => setTimeout(resolve, AUDIO_DELAY));
     }
   }
 
-  process.status = 'audio_complete';
+  // Enviar textos restantes
+  while (textIndex < textQueue.length && !process.stopped) {
+    const loan = textQueue[textIndex];
+    process.textCurrent = textIndex + 1;
+    process.status = 'sending_text';
 
-  // ETAPA 2: Enviar textos
-  process.status = 'sending_text';
+    if (loan.client && loan.client.phone) {
+      try {
+        console.log(`Enviando texto restante ${textIndex + 1}/${textQueue.length} para ${loan.client.phone}`);
+        const message = generateMessage(loan, loan.client);
+        const success = await sendMessage(loan.client.phone, message, false);
 
-  for (let i = 0; i < loans.length; i++) {
-    if (process.stopped) {
-      process.status = 'stopped';
-      return;
-    }
-
-    const loan = loans[i];
-    process.textCurrent = i + 1;
-
-    if (!loan.client || !loan.client.phone) {
-      process.textFailed++;
-      continue;
-    }
-
-    try {
-      const message = generateMessage(loan, loan.client);
-      const success = await sendMessage(loan.client.phone, message, false); // false = não enviar áudio
-
-      if (success) {
-        process.textSent++;
-      } else {
+        if (success) {
+          process.textSent++;
+        } else {
+          process.textFailed++;
+        }
+      } catch (error) {
+        console.error(`Erro ao enviar texto para ${loan.client.phone}:`, error);
         process.textFailed++;
       }
-    } catch (error) {
-      console.error(`Erro ao enviar texto para ${loan.client.phone}:`, error);
+    } else {
       process.textFailed++;
     }
 
-    // Pequeno delay entre textos
-    if (i < loans.length - 1 && !process.stopped) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
+    textIndex++;
+
+    if (textIndex < textQueue.length && !process.stopped) {
+      console.log(`Aguardando ${TEXT_DELAY / 1000 / 60} minutos antes do próximo texto...`);
+      await new Promise(resolve => setTimeout(resolve, TEXT_DELAY));
     }
   }
 
   process.status = 'completed';
   process.audioCurrent = 0;
   process.textCurrent = 0;
+  console.log('✅ Processo de envio concluído!');
 }
 
 /**
@@ -537,7 +696,7 @@ router.post('/messages/send-stop/:processId', (req, res) => {
  */
 router.post('/messages/send-single-loan', async (req, res) => {
   try {
-    const { loanId, sendOption } = req.body;
+    const { loanId, sendOption, company } = req.body;
     
     if (!loanId) {
       return res.status(400).json({ 
@@ -546,14 +705,34 @@ router.post('/messages/send-single-loan', async (req, res) => {
       });
     }
 
-    const company = req.query.company || req.body.company || 'franca';
-    const allLoans = await getOverdueAndDueTodayLoans(null, company);
-    const loan = allLoans.find(l => l.id === loanId || l.loan_id === loanId);
+    const selectedCompany = company || req.query.company || 'franca';
+    console.log(`Buscando empréstimo ${loanId} na empresa ${selectedCompany}`);
     
-    if (!loan || !loan.client) {
+    const allLoans = await getOverdueAndDueTodayLoans(null, selectedCompany);
+    console.log(`Total de empréstimos encontrados: ${allLoans.length}`);
+    
+    const loan = allLoans.find(l => {
+      const matchesId = l.id === loanId || l.loan_id === loanId;
+      if (matchesId) {
+        console.log(`Empréstimo encontrado:`, { id: l.id, loan_id: l.loan_id, client: l.client ? 'sim' : 'não' });
+      }
+      return matchesId;
+    });
+    
+    if (!loan) {
+      console.log(`Empréstimo não encontrado. IDs disponíveis (primeiros 5):`, 
+        allLoans.slice(0, 5).map(l => ({ id: l.id, loan_id: l.loan_id }))
+      );
       return res.status(404).json({ 
         success: false, 
-        error: 'Empréstimo não encontrado' 
+        error: `Empréstimo não encontrado. Verifique se o ID está correto e se a empresa está selecionada corretamente.` 
+      });
+    }
+    
+    if (!loan.client) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Cliente não encontrado para este empréstimo' 
       });
     }
 

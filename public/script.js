@@ -25,8 +25,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Atualizar status a cada 30 segundos
     setInterval(checkBotStatus, 30000);
-    // Atualizar QR Code a cada 5 segundos
-    setInterval(loadQRCode, 5000);
+    // Atualizar QR Code a cada 3 segundos (quando não estiver na aba QR Code)
+    setInterval(() => {
+        if (currentTab !== 'qr-code') {
+            loadQRCode();
+        }
+    }, 3000);
 });
 
 // Inicializar sistema de abas
@@ -72,7 +76,13 @@ function switchTab(tabName) {
         const dueTodayLoans = loans.filter(l => l.loan_type === 'due_today' || (l.days_overdue === 0 && l.status === 'active'));
         renderLoans('dueTodayList', dueTodayLoans);
     } else if (tabName === 'qr-code') {
+        // Carregar QR Code imediatamente ao abrir a aba
         loadQRCode();
+        // Iniciar polling mais frequente enquanto estiver na aba QR Code
+        startQRCodePolling();
+    } else {
+        // Parar polling quando sair da aba QR Code
+        stopQRCodePolling();
     }
     
     // Limpar seleção ao trocar de aba
@@ -106,6 +116,7 @@ function initializeEventListeners() {
 
     // QR Code
     document.getElementById('btnRefreshQR').addEventListener('click', loadQRCode);
+    document.getElementById('btnDisconnect').addEventListener('click', disconnectWhatsApp);
 
     // Seletor de empresa
     const companySelect = document.getElementById('companySelect');
@@ -486,10 +497,13 @@ async function executeSendMessage() {
     try {
         const requestBody = { 
             loanId: loanId,
+            company: currentCompany,
             sendOption: sendOption
         };
         
         console.log('Enviando mensagem com:', requestBody);
+        console.log('Empresa atual:', currentCompany);
+        console.log('Loan ID:', loanId);
         
         const response = await fetch(`${API_BASE}/messages/send-single-loan`, {
             method: 'POST',
@@ -770,24 +784,97 @@ function updateProgress(progress) {
     document.getElementById('failedCount').textContent = audioFailed + textFailed;
 }
 
+// Variáveis para controle de polling do QR Code
+let qrCodePollingInterval = null;
+
+// Iniciar polling frequente do QR Code
+function startQRCodePolling() {
+    // Parar polling anterior se existir
+    stopQRCodePolling();
+    // Polling a cada 1 segundo quando na aba QR Code
+    qrCodePollingInterval = setInterval(loadQRCode, 1000);
+}
+
+// Parar polling do QR Code
+function stopQRCodePolling() {
+    if (qrCodePollingInterval) {
+        clearInterval(qrCodePollingInterval);
+        qrCodePollingInterval = null;
+    }
+}
+
 // Carregar QR Code
 async function loadQRCode() {
     const qrCodeBox = document.getElementById('qrCodeBox');
     
+    if (!qrCodeBox) {
+        console.warn('Elemento qrCodeBox não encontrado');
+        return;
+    }
+    
     try {
-        const response = await fetch(`${API_BASE}/qr-code`);
+        const response = await fetch(`${API_BASE}/qr-code`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            // Adicionar timeout e tratamento de erro de conexão
+            signal: AbortSignal.timeout(5000) // 5 segundos de timeout
+        }).catch(error => {
+            if (error.name === 'AbortError') {
+                throw new Error('Timeout ao buscar QR Code. O servidor pode estar lento.');
+            } else if (error.message.includes('Failed to fetch') || error.message.includes('ERR_CONNECTION_REFUSED')) {
+                throw new Error('Servidor não está respondendo. Verifique se o bot está rodando.');
+            }
+            throw error;
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
         const data = await response.json();
+        
+        console.log('QR Code response:', { 
+            success: data.success, 
+            hasQRCode: !!data.qrCode, 
+            isConnected: data.isConnected,
+            message: data.message 
+        });
 
         if (data.success && data.qrCode) {
-            qrCodeBox.innerHTML = `<img src="data:image/png;base64,${data.qrCode}" alt="QR Code WhatsApp">`;
+            qrCodeBox.innerHTML = `
+                <div style="text-align: center; padding: 20px;">
+                    <img src="data:image/png;base64,${data.qrCode}" alt="QR Code WhatsApp" style="max-width: 100%; max-height: 400px; height: auto; border: 3px solid var(--primary-color); border-radius: 12px; padding: 15px; background: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    <p style="margin-top: 20px; font-size: 14px; color: var(--text-secondary); font-weight: 500;">
+                        <i class="fas fa-info-circle"></i> Escaneie este QR Code com o WhatsApp
+                    </p>
+                    <p style="margin-top: 8px; font-size: 12px; color: var(--text-secondary);">
+                        Abra o WhatsApp > Configurações > Aparelhos conectados > Conectar um aparelho
+                    </p>
+                </div>
+            `;
+            updateConnectionStatus(false, 'Aguardando conexão...');
+            console.log('✅ QR Code exibido com sucesso no painel');
+        } else if (data.isConnected) {
+            qrCodeBox.innerHTML = `
+                <div class="qr-connected">
+                    <i class="fas fa-check-circle"></i>
+                    <p>WhatsApp Conectado</p>
+                    <p style="font-size: 12px; margin-top: 8px; color: var(--success-color);">Você pode desconectar para trocar de número</p>
+                </div>
+            `;
+            updateConnectionStatus(true, 'Conectado');
         } else {
             qrCodeBox.innerHTML = `
                 <div class="qr-loading">
                     <i class="fas fa-qrcode"></i>
                     <p>${data.message || 'QR Code ainda não disponível'}</p>
                     <p style="font-size: 12px; margin-top: 8px;">Aguarde o bot inicializar...</p>
+                    <p style="font-size: 11px; margin-top: 4px; color: var(--text-secondary);">Se o QR Code não aparecer em alguns segundos, verifique os logs do servidor</p>
                 </div>
             `;
+            updateConnectionStatus(false, 'Aguardando QR Code...');
         }
     } catch (error) {
         console.error('Erro ao carregar QR Code:', error);
@@ -795,9 +882,74 @@ async function loadQRCode() {
             <div class="qr-loading">
                 <i class="fas fa-exclamation-circle"></i>
                 <p>Erro ao carregar QR Code</p>
+                <p style="font-size: 12px; margin-top: 8px; color: var(--danger-color);">${error.message}</p>
             </div>
         `;
+        updateConnectionStatus(false, 'Erro ao verificar conexão');
     }
+}
+
+// Atualizar status de conexão
+function updateConnectionStatus(isConnected, text) {
+    const statusElement = document.getElementById('connectionStatus');
+    const statusText = document.getElementById('connectionStatusText');
+    
+    if (statusElement && statusText) {
+        statusText.textContent = text;
+        const icon = statusElement.querySelector('i');
+        if (icon) {
+            icon.className = 'fas fa-circle';
+            icon.style.color = isConnected ? 'var(--success-color)' : 'var(--warning-color)';
+        }
+    }
+}
+
+// Desconectar WhatsApp
+async function disconnectWhatsApp() {
+    showConfirmModal(
+        'Desconectar WhatsApp',
+        'Tem certeza que deseja desconectar o WhatsApp? Você precisará escanear o QR Code novamente para reconectar.',
+        async () => {
+            try {
+                showToast('Desconectando WhatsApp...', 'info');
+                
+                const response = await fetch(`${API_BASE}/bot/disconnect`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showToast('WhatsApp desconectado com sucesso!', 'success');
+                    // Aguardar um pouco e reinicializar para gerar novo QR Code
+                    setTimeout(async () => {
+                        try {
+                            const restartResponse = await fetch(`${API_BASE}/bot/restart`, {
+                                method: 'POST'
+                            });
+                            const restartData = await restartResponse.json();
+                            
+                            if (restartData.success) {
+                                showToast('Bot reiniciado. Novo QR Code será gerado em instantes...', 'info');
+                                // Aguardar e recarregar QR Code
+                                setTimeout(() => {
+                                    loadQRCode();
+                                }, 3000);
+                            }
+                        } catch (error) {
+                            console.error('Erro ao reiniciar bot:', error);
+                            showToast('WhatsApp desconectado. Recarregue a página para gerar novo QR Code.', 'warning');
+                        }
+                    }, 2000);
+                } else {
+                    throw new Error(data.message || 'Erro ao desconectar');
+                }
+            } catch (error) {
+                console.error('Erro ao desconectar WhatsApp:', error);
+                showToast('Erro ao desconectar WhatsApp', 'error');
+            }
+        }
+    );
 }
 
 // Atualizar estatísticas
