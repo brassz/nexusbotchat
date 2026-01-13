@@ -1,0 +1,74 @@
+═══════════════════════════════════════════════════════════════
+  COMANDOS SCP PARA TRANSFERIR ARQUIVOS ALTERADOS
+  Execute no PowerShell ou Terminal
+  
+  ⚠️  CORREÇÃO: Erros corrigidos (sendAudio export e partial_paid_loans)
+═══════════════════════════════════════════════════════════════
+
+1️⃣  TRANSFERIR public/index.html
+───────────────────────────────────────────────────────────────
+scp public/index.html root@212.85.19.210:/var/www/nexusbot/public/
+
+
+2️⃣  TRANSFERIR public/script.js
+───────────────────────────────────────────────────────────────
+scp public/script.js root@212.85.19.210:/var/www/nexusbot/public/
+
+
+3️⃣  TRANSFERIR public/styles.css
+───────────────────────────────────────────────────────────────
+scp public/styles.css root@212.85.19.210:/var/www/nexusbot/public/
+
+
+4️⃣  TRANSFERIR src/bot/whatsappBot.js
+───────────────────────────────────────────────────────────────
+scp src/bot/whatsappBot.js root@212.85.19.210:/var/www/nexusbot/src/bot/
+
+
+5️⃣  TRANSFERIR src/routes/api.js
+───────────────────────────────────────────────────────────────
+scp src/routes/api.js root@212.85.19.210:/var/www/nexusbot/src/routes/
+
+
+6️⃣  TRANSFERIR src/services/loanService.js
+───────────────────────────────────────────────────────────────
+scp src/services/loanService.js root@212.85.19.210:/var/www/nexusbot/src/services/
+
+
+7️⃣  TRANSFERIR src/index.js
+───────────────────────────────────────────────────────────────
+scp src/index.js root@212.85.19.210:/var/www/nexusbot/src/
+
+
+8️⃣  TRANSFERIR package.json
+───────────────────────────────────────────────────────────────
+scp package.json root@212.85.19.210:/var/www/nexusbot/
+
+
+9️⃣  INSTALAR NOVAS DEPENDÊNCIAS
+───────────────────────────────────────────────────────────────
+ssh root@212.85.19.210 "cd /var/www/nexusbot && npm install"
+
+
+🔟  CRIAR DIRETÓRIO DE ÁUDIOS
+───────────────────────────────────────────────────────────────
+ssh root@212.85.19.210 "mkdir -p /var/www/nexusbot/public/audios"
+
+
+1️⃣1️⃣  REINICIAR O BOT
+───────────────────────────────────────────────────────────────
+ssh root@212.85.19.210 "cd /var/www/nexusbot && pm2 restart nexusbot"
+
+
+═══════════════════════════════════════════════════════════════
+  OU USE OS SCRIPTS AUTOMATIZADOS:
+═══════════════════════════════════════════════════════════════
+
+Windows PowerShell:
+powershell -ExecutionPolicy Bypass -File TRANSFERIR_ALTERACOES.ps1
+
+Linux/Mac:
+bash TRANSFERIR_ALTERACOES.sh
+
+═══════════════════════════════════════════════════════════════
+

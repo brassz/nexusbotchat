@@ -1,0 +1,256 @@
+import { supabase } from '../config/database.js';
+
+/**
+ * Busca empréstimos com status overdue ou due_today
+ * @param {Date} targetDate - Data para verificar vencimentos (opcional, usa hoje se não fornecido)
+ * @returns {Promise<Array>} Lista de empréstimos com informações do cliente
+ */
+export async function getOverdueAndDueTodayLoans(targetDate = null) {
+  const today = targetDate || new Date();
+  const todayStr = today.toISOString().split('T')[0];
+
+  try {
+    // Buscar TODOS os empréstimos (não filtrar por status, buscar todos e filtrar depois)
+    const { data: allLoansData, error: allLoansError } = await supabase
+      .from('loans')
+      .select(`
+        *,
+        clients (
+          id,
+          name,
+          phone,
+          cpf,
+          email
+        )
+      `)
+      .neq('status', 'paid')
+      .neq('status', 'cancelled');
+
+    if (allLoansError) {
+      console.error('Erro ao buscar empréstimos:', allLoansError);
+    }
+
+    // Filtrar empréstimos overdue (vencidos) e due_today (vencem hoje)
+    const overdueLoans = [];
+    const dueTodayLoans = [];
+
+    if (allLoansData) {
+      allLoansData.forEach(loan => {
+        if (!loan.clients) return; // Pular se não tiver cliente
+        
+        const daysOverdue = calculateDaysOverdue(loan.due_date);
+        const isDueToday = loan.due_date === todayStr;
+        const isOverdue = daysOverdue > 0 || loan.status === 'overdue';
+
+        if (isOverdue || isDueToday) {
+          const loanData = {
+            ...loan,
+            client: loan.clients,
+            days_overdue: daysOverdue,
+            loan_type: isDueToday ? 'due_today' : 'overdue'
+          };
+
+          if (isDueToday && !isOverdue) {
+            // Se vence hoje mas não está vencido, adicionar apenas em due_today
+            dueTodayLoans.push(loanData);
+          } else if (isOverdue) {
+            // Se está vencido, adicionar em overdue
+            overdueLoans.push(loanData);
+            // Se também vence hoje, adicionar em due_today também
+            if (isDueToday) {
+              dueTodayLoans.push(loanData);
+            }
+          }
+        }
+      });
+    }
+
+    // Buscar também na tabela overdue_loans
+    const { data: overdueLoansTable, error: overdueTableError } = await supabase
+      .from('overdue_loans')
+      .select(`
+        *,
+        clients (
+          id,
+          name,
+          phone,
+          cpf,
+          email
+        )
+      `)
+      .in('collection_status', ['pending', 'in_progress']);
+
+    if (overdueTableError) {
+      console.error('Erro ao buscar da tabela overdue_loans:', overdueTableError);
+    }
+
+    // Buscar também na tabela partial_paid_loans que estão vencidos ou vencem hoje
+    // Nota: Esta tabela pode não ter relacionamento direto com clients, buscar separadamente
+    const { data: partialPaidLoans, error: partialPaidError } = await supabase
+      .from('partial_paid_loans')
+      .select('*')
+      .lte('due_date', todayStr)
+      .gt('remaining_amount', 0);
+
+    if (partialPaidError) {
+      console.error('Erro ao buscar da tabela partial_paid_loans:', partialPaidError);
+    }
+
+    // Buscar clientes para os empréstimos partial_paid_loans
+    let partialPaidLoansWithClients = [];
+    if (partialPaidLoans && partialPaidLoans.length > 0) {
+      const clientIds = [...new Set(partialPaidLoans.map(loan => loan.client_id).filter(Boolean))];
+      
+      if (clientIds.length > 0) {
+        const { data: clientsData, error: clientsError } = await supabase
+          .from('clients')
+          .select('id, name, phone, cpf, email')
+          .in('id', clientIds);
+
+        if (!clientsError && clientsData) {
+          const clientsMap = new Map(clientsData.map(c => [c.id, c]));
+          
+          partialPaidLoansWithClients = partialPaidLoans.map(loan => ({
+            ...loan,
+            clients: clientsMap.get(loan.client_id) || null
+          }));
+        }
+      }
+    }
+
+    // Combinar e formatar os resultados
+    const allLoans = [];
+
+    // Processar empréstimos overdue da tabela loans
+    overdueLoans.forEach(loan => {
+      if (loan.client) {
+        allLoans.push(loan);
+      }
+    });
+
+    // Processar empréstimos que vencem hoje
+    dueTodayLoans.forEach(loan => {
+      if (loan.client) {
+        allLoans.push(loan);
+      }
+    });
+
+    // Processar empréstimos da tabela overdue_loans
+    if (overdueLoansTable) {
+      overdueLoansTable.forEach(loan => {
+        if (loan.clients) {
+          const daysOverdue = loan.days_overdue || calculateDaysOverdue(loan.due_date);
+          allLoans.push({
+            ...loan,
+            client: loan.clients,
+            loan_type: 'overdue_table',
+            days_overdue: daysOverdue,
+            id: loan.loan_id || loan.id
+          });
+        }
+      });
+    }
+
+    // Processar empréstimos da tabela partial_paid_loans
+    if (partialPaidLoansWithClients && partialPaidLoansWithClients.length > 0) {
+      partialPaidLoansWithClients.forEach(loan => {
+        if (loan.clients) {
+          const daysOverdue = calculateDaysOverdue(loan.due_date);
+          const isDueToday = loan.due_date === todayStr;
+          allLoans.push({
+            ...loan,
+            client: loan.clients,
+            loan_type: isDueToday ? 'due_today' : 'partial_paid',
+            days_overdue: daysOverdue,
+            id: loan.loan_id || loan.id
+          });
+        }
+      });
+    }
+
+    // Remover duplicatas baseado no loan_id ou id
+    const uniqueLoans = [];
+    const seenIds = new Set();
+    const seenClientLoan = new Set(); // Para evitar duplicatas por cliente+loan
+
+    allLoans.forEach(loan => {
+      if (!loan.client || !loan.client.id) {
+        return; // Pular se não tiver cliente
+      }
+
+      const loanId = loan.loan_id || loan.id;
+      const clientLoanKey = `${loan.client.id}_${loanId}`;
+      
+      // Evitar duplicatas: mesmo loan_id ou mesma combinação cliente+loan
+      if (!seenIds.has(loanId) && !seenClientLoan.has(clientLoanKey)) {
+        seenIds.add(loanId);
+        seenClientLoan.add(clientLoanKey);
+        uniqueLoans.push(loan);
+      }
+    });
+
+    console.log(`Total de empréstimos encontrados: ${uniqueLoans.length}`);
+    console.log(`- Overdue: ${uniqueLoans.filter(l => l.loan_type === 'overdue' || l.days_overdue > 0).length}`);
+    console.log(`- Due Today: ${uniqueLoans.filter(l => l.loan_type === 'due_today').length}`);
+
+    return uniqueLoans;
+  } catch (error) {
+    console.error('Erro ao buscar empréstimos:', error);
+    return [];
+  }
+}
+
+/**
+ * Busca empréstimos por data de vencimento
+ * @param {Date} dueDate - Data de vencimento
+ * @returns {Promise<Array>} Lista de empréstimos
+ */
+export async function getLoansByDueDate(dueDate) {
+  const dueDateStr = dueDate.toISOString().split('T')[0];
+
+  try {
+    const { data, error } = await supabase
+      .from('loans')
+      .select(`
+        *,
+        clients (
+          id,
+          name,
+          phone,
+          cpf,
+          email
+        )
+      `)
+      .eq('due_date', dueDateStr);
+
+    if (error) {
+      console.error('Erro ao buscar empréstimos por data:', error);
+      return [];
+    }
+
+    return data.map(loan => ({
+      ...loan,
+      client: loan.clients,
+      days_overdue: calculateDaysOverdue(loan.due_date)
+    }));
+  } catch (error) {
+    console.error('Erro ao buscar empréstimos por data:', error);
+    return [];
+  }
+}
+
+/**
+ * Calcula dias em atraso
+ */
+function calculateDaysOverdue(dueDate) {
+  const due = new Date(dueDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  due.setHours(0, 0, 0, 0);
+  
+  const diffTime = today - due;
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  
+  return diffDays > 0 ? diffDays : 0;
+}
+

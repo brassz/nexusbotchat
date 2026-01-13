@@ -1,0 +1,11 @@
+node_modules/
+.env
+.tokens/
+.wppconnect/
+*.log
+.DS_Store
+dist/
+build/
+public/audios/*.mp3
+!public/audios/.gitkeep
+

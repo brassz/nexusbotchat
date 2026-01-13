@@ -1,0 +1,75 @@
+═══════════════════════════════════════════════════════════════
+  TRANSFERÊNCIA MANUAL - COMANDOS POWERSHELL
+  NexusBOT - Copie e cole cada comando
+═══════════════════════════════════════════════════════════════
+
+1️⃣  CRIAR DIRETÓRIO NA VPS
+───────────────────────────────────────────────────────────────
+ssh root@212.85.19.210 "mkdir -p /var/www/nexusbot"
+
+
+2️⃣  TRANSFERIR src/ (Código do bot)
+───────────────────────────────────────────────────────────────
+scp -r src root@212.85.19.210:/var/www/nexusbot/
+
+
+3️⃣  TRANSFERIR public/ (Painel web)
+───────────────────────────────────────────────────────────────
+scp -r public root@212.85.19.210:/var/www/nexusbot/
+
+
+4️⃣  TRANSFERIR package.json
+───────────────────────────────────────────────────────────────
+scp package.json root@212.85.19.210:/var/www/nexusbot/
+
+
+5️⃣  TRANSFERIR .env
+───────────────────────────────────────────────────────────────
+scp .env root@212.85.19.210:/var/www/nexusbot/
+
+
+5️⃣  TRANSFERIR ecosystem.config.js (opcional - apenas referência)
+───────────────────────────────────────────────────────────────
+scp ecosystem.config.js root@212.85.19.210:/var/www/nexusbot/
+
+⚠️  NOTA: PM2 não usa este arquivo quando type: "module" está no package.json
+    Use o comando direto: pm2 start src/index.js --name nexusbot
+
+
+6️⃣  VERIFICAR TRANSFERÊNCIA
+───────────────────────────────────────────────────────────────
+ssh root@212.85.19.210 "ls -la /var/www/nexusbot"
+
+
+7️⃣  INSTALAR DEPENDÊNCIAS (Após transferência)
+───────────────────────────────────────────────────────────────
+ssh root@212.85.19.210 "cd /var/www/nexusbot && npm install --production"
+
+
+8️⃣  INICIAR COM PM2 (Após instalar dependências)
+───────────────────────────────────────────────────────────────
+ssh root@212.85.19.210 "cd /var/www/nexusbot && pm2 start src/index.js --name nexusbot"
+
+
+9️⃣  SALVAR CONFIGURAÇÃO PM2
+───────────────────────────────────────────────────────────────
+ssh root@212.85.19.210 "pm2 save"
+
+
+🔟  VERIFICAR STATUS
+───────────────────────────────────────────────────────────────
+ssh root@212.85.19.210 "pm2 status"
+
+
+═══════════════════════════════════════════════════════════════
+  OU USE O SCRIPT AUTOMATIZADO:
+═══════════════════════════════════════════════════════════════
+
+npm run transfer
+
+ou
+
+powershell -ExecutionPolicy Bypass -File scripts\transfer-manual.ps1
+
+═══════════════════════════════════════════════════════════════
+

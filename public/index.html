@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexusBOT - Painel de Controle</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-robot"></i>
+                    <h1>NexusBOT</h1>
+                </div>
+                <div class="status-indicator">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusText">Conectando...</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon overdue">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3>Em Atraso</h3>
+                        <p class="stat-value" id="overdueCount">0</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon due-today">
+                        <i class="fas fa-calendar-day"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3>Vencem Hoje</h3>
+                        <p class="stat-value" id="dueTodayCount">0</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon total">
+                        <i class="fas fa-list"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3>Total</h3>
+                        <p class="stat-value" id="totalCount">0</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="actions-panel">
+                <h2>Ações</h2>
+                <div class="actions-grid">
+                    <button class="action-btn primary" id="btnRefresh">
+                        <i class="fas fa-sync-alt"></i>
+                        <span>Atualizar Lista</span>
+                    </button>
+                    <button class="action-btn success" id="btnSendAll">
+                        <i class="fas fa-paper-plane"></i>
+                        <span>Enviar Todas as Mensagens</span>
+                    </button>
+                    <button class="action-btn info" id="btnFilterDate">
+                        <i class="fas fa-calendar-alt"></i>
+                        <span>Filtrar por Data</span>
+                    </button>
+                    <button class="action-btn warning" id="btnSendByDate">
+                        <i class="fas fa-envelope"></i>
+                        <span>Enviar por Data</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="audio-panel">
+                <h2>Áudio para Envio</h2>
+                <div class="audio-upload-area" id="audioUploadArea">
+                    <div class="audio-status" id="audioStatus">
+                        <i class="fas fa-music"></i>
+                        <p>Nenhum áudio configurado</p>
+                    </div>
+                    <div class="audio-actions">
+                        <label for="audioFileInput" class="btn-primary">
+                            <i class="fas fa-upload"></i> Enviar Áudio MP3
+                        </label>
+                        <input type="file" id="audioFileInput" accept="audio/mpeg,audio/mp3,.mp3" style="display: none;">
+                        <button class="btn-secondary" id="btnRemoveAudio" style="display: none;">
+                            <i class="fas fa-trash"></i> Remover Áudio
+                        </button>
+                    </div>
+                    <div class="audio-info" id="audioInfo" style="display: none;">
+                        <p><strong>Arquivo:</strong> <span id="audioFileName"></span></p>
+                        <p><strong>Tamanho:</strong> <span id="audioFileSize"></span></p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="loans-panel">
+                <div class="panel-header">
+                    <h2>Empréstimos</h2>
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="searchInput" placeholder="Buscar cliente...">
+                    </div>
+                </div>
+                
+                <!-- Tabs -->
+                <div class="tabs-container">
+                    <div class="tabs">
+                        <button class="tab-btn active" data-tab="all">
+                            <i class="fas fa-list"></i> Todos
+                        </button>
+                        <button class="tab-btn" data-tab="overdue">
+                            <i class="fas fa-exclamation-triangle"></i> Vencidos
+                        </button>
+                        <button class="tab-btn" data-tab="due-today">
+                            <i class="fas fa-calendar-day"></i> Vencem Hoje
+                        </button>
+                        <button class="tab-btn" data-tab="qr-code">
+                            <i class="fas fa-qrcode"></i> QR Code
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Ações de seleção múltipla -->
+                <div class="selection-actions" id="selectionActions" style="display: none;">
+                    <div class="selection-info">
+                        <span id="selectedCount">0</span> selecionado(s)
+                    </div>
+                    <div class="selection-buttons">
+                        <button class="btn-small secondary" id="btnSelectAll">
+                            <i class="fas fa-check-square"></i> Selecionar Todos
+                        </button>
+                        <button class="btn-small secondary" id="btnDeselectAll">
+                            <i class="fas fa-square"></i> Desmarcar Todos
+                        </button>
+                        <button class="btn-small success" id="btnSendSelected">
+                            <i class="fas fa-paper-plane"></i> Enviar Selecionados
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Conteúdo das abas -->
+                <div class="tab-content active" id="tab-all">
+                    <div class="loans-list" id="loansList">
+                        <div class="loading">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <p>Carregando empréstimos...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="tab-overdue">
+                    <div class="loans-list" id="overdueList">
+                        <div class="loading">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <p>Carregando empréstimos vencidos...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="tab-due-today">
+                    <div class="loans-list" id="dueTodayList">
+                        <div class="loading">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <p>Carregando empréstimos que vencem hoje...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="tab-qr-code">
+                    <div class="qr-code-container">
+                        <div class="qr-code-box" id="qrCodeBox">
+                            <div class="qr-loading">
+                                <i class="fas fa-spinner fa-spin"></i>
+                                <p>Carregando QR Code...</p>
+                            </div>
+                        </div>
+                        <div class="qr-instructions">
+                            <h3>Como conectar:</h3>
+                            <ol>
+                                <li>Abra o WhatsApp no seu celular</li>
+                                <li>Vá em <strong>Configurações</strong> > <strong>Aparelhos conectados</strong></li>
+                                <li>Toque em <strong>Conectar um aparelho</strong></li>
+                                <li>Escaneie o QR Code acima</li>
+                            </ol>
+                            <button class="btn-primary" id="btnRefreshQR">
+                                <i class="fas fa-sync-alt"></i> Atualizar QR Code
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal para filtrar por data -->
+    <div class="modal" id="dateModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Filtrar por Data de Vencimento</h3>
+                <button class="modal-close" id="closeDateModal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <label for="dateInput">Data de Vencimento:</label>
+                <input type="date" id="dateInput" class="form-input">
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelDateFilter">Cancelar</button>
+                <button class="btn-primary" id="applyDateFilter">Aplicar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de confirmação -->
+    <div class="modal" id="confirmModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="confirmTitle">Confirmar Ação</h3>
+                <button class="modal-close" id="closeConfirmModal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="confirmMessage">Tem certeza que deseja realizar esta ação?</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelConfirm">Cancelar</button>
+                <button class="btn-primary" id="confirmAction">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de escolha de envio -->
+    <div class="modal" id="sendOptionsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Escolher Tipo de Envio</h3>
+                <button class="modal-close" id="closeSendOptionsModal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 20px; color: var(--text-secondary);">Selecione como deseja enviar a mensagem:</p>
+                
+                <div class="send-options">
+                    <button class="send-option-btn" data-option="audio-text" id="optionAudioText">
+                        <div class="option-icon">
+                            <i class="fas fa-microphone"></i>
+                            <i class="fas fa-comment"></i>
+                        </div>
+                        <div class="option-content">
+                            <h4>Áudio + Texto</h4>
+                            <p>Envia o áudio primeiro e depois a mensagem de texto</p>
+                        </div>
+                    </button>
+                    
+                    <button class="send-option-btn" data-option="text" id="optionText">
+                        <div class="option-icon">
+                            <i class="fas fa-comment"></i>
+                        </div>
+                        <div class="option-content">
+                            <h4>Apenas Texto</h4>
+                            <p>Envia somente a mensagem de texto</p>
+                        </div>
+                    </button>
+                    
+                    <button class="send-option-btn" data-option="audio" id="optionAudio">
+                        <div class="option-icon">
+                            <i class="fas fa-microphone"></i>
+                        </div>
+                        <div class="option-content">
+                            <h4>Apenas Áudio</h4>
+                            <p>Envia somente o áudio (se configurado)</p>
+                        </div>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelSendOptions">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Progresso de Envio -->
+    <div class="modal" id="progressModal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3>Enviando Mensagens</h3>
+                <button class="modal-close" id="closeProgressModal" style="display: none;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="progress-container">
+                    <div class="progress-section">
+                        <div class="progress-header">
+                            <h4>
+                                <i class="fas fa-microphone"></i> Enviando Áudios
+                                <span id="audioProgressText">0 / 0</span>
+                            </h4>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="audioProgressBar">
+                                <div class="progress-fill" id="audioProgressFill" style="width: 0%"></div>
+                            </div>
+                            <div class="progress-percentage" id="audioProgressPercent">0%</div>
+                        </div>
+                        <div class="progress-status" id="audioStatus">Aguardando...</div>
+                    </div>
+
+                    <div class="progress-section">
+                        <div class="progress-header">
+                            <h4>
+                                <i class="fas fa-comment"></i> Enviando Textos
+                                <span id="textProgressText">0 / 0</span>
+                            </h4>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="textProgressBar">
+                                <div class="progress-fill" id="textProgressFill" style="width: 0%"></div>
+                            </div>
+                            <div class="progress-percentage" id="textProgressPercent">0%</div>
+                        </div>
+                        <div class="progress-status" id="textStatus">Aguardando áudios...</div>
+                    </div>
+                </div>
+
+                <div class="progress-summary" id="progressSummary">
+                    <div class="summary-item">
+                        <span class="summary-label">Total:</span>
+                        <span class="summary-value" id="totalCount">0</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Áudios Enviados:</span>
+                        <span class="summary-value success" id="audioSentCount">0</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Textos Enviados:</span>
+                        <span class="summary-value success" id="textSentCount">0</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Falhas:</span>
+                        <span class="summary-value error" id="failedCount">0</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-danger" id="btnStopSending">
+                    <i class="fas fa-stop"></i> Parar Envio
+                </button>
+                <button class="btn-secondary" id="btnCloseProgress" style="display: none;">
+                    Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
+
