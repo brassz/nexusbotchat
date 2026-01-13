@@ -12,6 +12,7 @@ let currentSendOption = null;
 let sendingInProgress = false;
 let sendingProcessId = null;
 let progressInterval = null;
+let currentCompany = localStorage.getItem('selectedCompany') || 'franca';
 
 // Inicialização
 document.addEventListener('DOMContentLoaded', () => {
@@ -106,6 +107,20 @@ function initializeEventListeners() {
     // QR Code
     document.getElementById('btnRefreshQR').addEventListener('click', loadQRCode);
 
+    // Seletor de empresa
+    const companySelect = document.getElementById('companySelect');
+    companySelect.value = currentCompany;
+    companySelect.addEventListener('change', (e) => {
+        currentCompany = e.target.value;
+        localStorage.setItem('selectedCompany', currentCompany);
+        showToast(`Empresa alterada para: ${e.target.options[e.target.selectedIndex].text}`, 'info');
+        // Limpar seleções e filtros
+        selectedLoans.clear();
+        filteredLoans = [];
+        // Recarregar dados da nova empresa
+        loadLoans();
+    });
+
     // Áudio
     document.getElementById('audioFileInput').addEventListener('change', handleAudioUpload);
     document.getElementById('btnRemoveAudio').addEventListener('click', removeAudio);
@@ -162,7 +177,7 @@ function initializeEventListeners() {
 // Verificar status do bot
 async function checkBotStatus() {
     try {
-        const response = await fetch(`${API_BASE}/loans/overdue`);
+        const response = await fetch(`${API_BASE}/loans/overdue?company=${currentCompany}`);
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
         
@@ -190,7 +205,7 @@ async function loadLoans() {
     loansList.innerHTML = '<div class="loading"><i class="fas fa-spinner fa-spin"></i><p>Carregando empréstimos...</p></div>';
 
     try {
-        const response = await fetch(`${API_BASE}/loans/overdue`);
+        const response = await fetch(`${API_BASE}/loans/overdue?company=${currentCompany}`);
         const data = await response.json();
 
         if (data.success) {
@@ -565,7 +580,7 @@ async function startSendingProcess(loanIds) {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ loanIds })
+            body: JSON.stringify({ loanIds, company: currentCompany })
         });
 
         if (!response.ok) {
@@ -867,7 +882,7 @@ async function applyDateFilter() {
         currentAction = null;
     } else {
         try {
-            const response = await fetch(`${API_BASE}/loans/by-date?date=${dateInput}`);
+            const response = await fetch(`${API_BASE}/loans/by-date?date=${dateInput}&company=${currentCompany}`);
             const data = await response.json();
 
             if (data.success) {
@@ -894,7 +909,7 @@ async function sendMessagesByDate(date) {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ date })
+            body: JSON.stringify({ date, company: currentCompany })
         });
 
         const data = await response.json();
@@ -917,7 +932,7 @@ async function sendMessagesByDate(date) {
 // Preview da mensagem
 async function previewMessage(loanId) {
     try {
-        const response = await fetch(`${API_BASE}/preview-message?loanId=${loanId}`);
+        const response = await fetch(`${API_BASE}/preview-message?loanId=${loanId}&company=${currentCompany}`);
         const data = await response.json();
 
         if (data.success) {

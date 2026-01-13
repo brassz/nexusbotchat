@@ -7,6 +7,7 @@ import { getOverdueAndDueTodayLoans, getLoansByDueDate } from '../services/loanS
 import { sendMessagesToOverdueClients, sendMessagesByDueDate, sendMessage, sendAudio, getQRCode } from '../bot/whatsappBot.js';
 import { generateMessage } from '../services/messageService.js';
 import { v4 as uuidv4 } from 'uuid';
+import { getAvailableCompanies } from '../config/database.js';
 
 // Armazenar processos de envio em memória (em produção, usar Redis)
 const sendingProcesses = new Map();
@@ -45,13 +46,28 @@ const upload = multer({
 const router = express.Router();
 
 /**
+ * GET /api/companies
+ * Retorna lista de empresas disponíveis
+ */
+router.get('/companies', (req, res) => {
+  try {
+    const companies = getAvailableCompanies();
+    res.json({ success: true, data: companies });
+  } catch (error) {
+    console.error('Erro ao buscar empresas:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * GET /api/loans/overdue
  * Retorna lista de empréstimos overdue e due_today
  */
 router.get('/loans/overdue', async (req, res) => {
   try {
-    const loans = await getOverdueAndDueTodayLoans();
-    res.json({ success: true, data: loans, count: loans.length });
+    const company = req.query.company || 'franca';
+    const loans = await getOverdueAndDueTodayLoans(null, company);
+    res.json({ success: true, data: loans, count: loans.length, company });
   } catch (error) {
     console.error('Erro ao buscar empréstimos:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -81,8 +97,9 @@ router.get('/loans/by-date', async (req, res) => {
       });
     }
 
-    const loans = await getLoansByDueDate(dueDate);
-    res.json({ success: true, data: loans, count: loans.length });
+    const company = req.query.company || 'franca';
+    const loans = await getLoansByDueDate(dueDate, company);
+    res.json({ success: true, data: loans, count: loans.length, company });
   } catch (error) {
     console.error('Erro ao buscar empréstimos por data:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -109,7 +126,8 @@ router.post('/messages/send-overdue', async (req, res) => {
  */
 router.post('/messages/send-by-date', async (req, res) => {
   try {
-    const { date } = req.body;
+    const { date, company } = req.body;
+    const selectedCompany = company || 'franca';
     
     if (!date) {
       return res.status(400).json({ 
@@ -120,14 +138,39 @@ router.post('/messages/send-by-date', async (req, res) => {
 
     const dueDate = new Date(date);
     if (isNaN(dueDate.getTime())) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Data inválida. Use o formato YYYY-MM-DD' 
+      return res.status(400).json({
+        success: false,
+        error: 'Data inválida. Use o formato YYYY-MM-DD'
       });
     }
 
-    const result = await sendMessagesByDueDate(dueDate);
-    res.json({ success: true, ...result });
+    const loans = await getLoansByDueDate(dueDate, selectedCompany);
+    
+    if (loans.length === 0) {
+      return res.json({ success: true, sent: 0, failed: 0, total: 0 });
+    }
+
+    let sent = 0;
+    let failed = 0;
+
+    for (const loan of loans) {
+      if (!loan.client || !loan.client.phone) {
+        failed++;
+        continue;
+      }
+
+      const message = generateMessage(loan, loan.client);
+      const success = await sendMessage(loan.client.phone, message, true);
+
+      if (success) {
+        sent++;
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } else {
+        failed++;
+      }
+    }
+
+    res.json({ success: true, sent, failed, total: loans.length });
   } catch (error) {
     console.error('Erro ao enviar mensagens por data:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -235,7 +278,8 @@ router.post('/messages/send-selected', async (req, res) => {
       });
     }
 
-    const allLoans = await getOverdueAndDueTodayLoans();
+    const company = req.query.company || req.body.company || 'franca';
+    const allLoans = await getOverdueAndDueTodayLoans(null, company);
     const selectedLoans = allLoans.filter(loan => 
       loanIds.includes(loan.id) || loanIds.includes(loan.loan_id)
     );
@@ -290,7 +334,8 @@ router.post('/messages/send-selected-staged', async (req, res) => {
       });
     }
 
-    const allLoans = await getOverdueAndDueTodayLoans();
+    const company = req.query.company || req.body.company || 'franca';
+    const allLoans = await getOverdueAndDueTodayLoans(null, company);
     const selectedLoans = allLoans.filter(loan => 
       loanIds.includes(loan.id) || loanIds.includes(loan.loan_id)
     );
@@ -501,7 +546,8 @@ router.post('/messages/send-single-loan', async (req, res) => {
       });
     }
 
-    const allLoans = await getOverdueAndDueTodayLoans();
+    const company = req.query.company || req.body.company || 'franca';
+    const allLoans = await getOverdueAndDueTodayLoans(null, company);
     const loan = allLoans.find(l => l.id === loanId || l.loan_id === loanId);
     
     if (!loan || !loan.client) {

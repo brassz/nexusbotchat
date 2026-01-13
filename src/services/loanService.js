@@ -1,13 +1,15 @@
-import { supabase } from '../config/database.js';
+import { getSupabaseClient } from '../config/database.js';
 
 /**
  * Busca empréstimos com status overdue ou due_today
  * @param {Date} targetDate - Data para verificar vencimentos (opcional, usa hoje se não fornecido)
+ * @param {string} company - Empresa para buscar (franca, litoral, mogiana, imperatriz)
  * @returns {Promise<Array>} Lista de empréstimos com informações do cliente
  */
-export async function getOverdueAndDueTodayLoans(targetDate = null) {
+export async function getOverdueAndDueTodayLoans(targetDate = null, company = 'franca') {
   const today = targetDate || new Date();
   const todayStr = today.toISOString().split('T')[0];
+  const supabase = getSupabaseClient(company);
 
   try {
     // Buscar TODOS os empréstimos (não filtrar por status, buscar todos e filtrar depois)
@@ -205,8 +207,9 @@ export async function getOverdueAndDueTodayLoans(targetDate = null) {
  * @param {Date} dueDate - Data de vencimento
  * @returns {Promise<Array>} Lista de empréstimos
  */
-export async function getLoansByDueDate(dueDate) {
+export async function getLoansByDueDate(dueDate, company = 'franca') {
   const dueDateStr = dueDate.toISOString().split('T')[0];
+  const supabase = getSupabaseClient(company);
 
   try {
     const { data, error } = await supabase
