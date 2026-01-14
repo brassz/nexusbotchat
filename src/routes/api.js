@@ -459,15 +459,104 @@ router.post('/messages/send-selected-staged', async (req, res) => {
 });
 
 /**
+ * Função para envio automático de mensagens para todas as empresas
+ * Usa a mesma lógica de envio intercalado
+ */
+export async function sendAutomaticMessages() {
+  try {
+    const companies = getAvailableCompanies();
+    const results = [];
+
+    for (const company of companies) {
+      console.log(`\n📧 Iniciando envio automático para empresa: ${company.name} (${company.id})`);
+      
+      try {
+        const loans = await getOverdueAndDueTodayLoans(null, company.id);
+        
+        if (loans.length === 0) {
+          console.log(`✅ Nenhum empréstimo encontrado para ${company.name}`);
+          results.push({
+            company: company.name,
+            total: 0,
+            audioSent: 0,
+            audioFailed: 0,
+            textSent: 0,
+            textFailed: 0
+          });
+          continue;
+        }
+
+        console.log(`📊 Encontrados ${loans.length} empréstimos para ${company.name}`);
+
+        // Criar processo de envio automático (sem processId visível no frontend)
+        const processId = `auto-${company.id}-${Date.now()}`;
+        const process = {
+          id: processId,
+          total: loans.length,
+          audioSent: 0,
+          audioFailed: 0,
+          textSent: 0,
+          textFailed: 0,
+          audioCurrent: 0,
+          textCurrent: 0,
+          status: 'starting',
+          stopped: false,
+          loans: loans
+        };
+
+        sendingProcesses.set(processId, process);
+
+        // Enviar mensagens usando a mesma lógica intercalada
+        await sendStagedMessages(processId, loans);
+
+        const finalProcess = sendingProcesses.get(processId);
+        results.push({
+          company: company.name,
+          total: finalProcess.total,
+          audioSent: finalProcess.audioSent,
+          audioFailed: finalProcess.audioFailed,
+          textSent: finalProcess.textSent,
+          textFailed: finalProcess.textFailed
+        });
+
+        // Limpar processo após conclusão
+        sendingProcesses.delete(processId);
+
+        console.log(`✅ Envio automático concluído para ${company.name}: ${finalProcess.textSent} textos enviados`);
+      } catch (error) {
+        console.error(`❌ Erro ao enviar mensagens para ${company.name}:`, error);
+        results.push({
+          company: company.name,
+          error: error.message
+        });
+      }
+    }
+
+    return {
+      success: true,
+      results,
+      timestamp: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('❌ Erro no envio automático:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
  * Função para enviar mensagens em etapas com intercalação
- * Estratégia: Enviar 2 áudios (delay 5min), depois 1 texto (delay 3min), repetir
+ * Estratégia: Enviar 2 áudios (delay 5min entre cada), depois 1 texto (delay 5min), repetir
+ * Intercala os envios para evitar bloqueios do WhatsApp
  */
 async function sendStagedMessages(processId, loans) {
   const process = sendingProcesses.get(processId);
   if (!process) return;
 
   const AUDIO_DELAY = 5 * 60 * 1000; // 5 minutos em milissegundos
-  const TEXT_DELAY = 3 * 60 * 1000;  // 3 minutos em milissegundos
+  const TEXT_DELAY = 5 * 60 * 1000;  // 5 minutos em milissegundos
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
   const audioDir = path.join(__dirname, '..', '..', 'public', 'audios');
@@ -552,7 +641,7 @@ async function sendStagedMessages(processId, loans) {
       textIndex++;
       audioCount = 0; // Resetar contador para enviar mais 2 áudios
 
-      // Delay de 3 minutos entre textos (antes de voltar a enviar áudios)
+      // Delay de 5 minutos entre textos (antes de voltar a enviar áudios)
       if (audioIndex < audioQueue.length && !process.stopped) {
         const delayMinutes = TEXT_DELAY / 1000 / 60;
         console.log(`⏳ Aguardando ${delayMinutes} minutos antes do próximo ciclo (2 áudios)...`);
@@ -633,9 +722,10 @@ async function sendStagedMessages(processId, loans) {
     }
   }
 
-  process.status = 'completed';
+  // Resetar contadores atuais antes de marcar como concluído
   process.audioCurrent = 0;
   process.textCurrent = 0;
+  process.status = 'completed';
   console.log('✅ Processo de envio concluído!');
 }
 

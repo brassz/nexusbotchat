@@ -62,21 +62,65 @@ async function startServer() {
     console.log(`📊 Painel disponível em http://localhost:${PORT}`);
   });
 
-  // Agendar envio automático de mensagens (diariamente às 9h)
-  cron.schedule('0 9 * * *', async () => {
+  // Agendar envio automático de mensagens
+  // 5:00 da manhã
+  cron.schedule('0 5 * * *', async () => {
     if (botInitialized) {
-      console.log('Iniciando envio automático de mensagens...');
+      console.log('\n⏰ ============================================');
+      console.log('📧 Iniciando envio automático (5:00 AM)...');
+      console.log('============================================\n');
       try {
-        const { sendMessagesToOverdueClients } = await import('./bot/whatsappBot.js');
-        const result = await sendMessagesToOverdueClients();
-        console.log('Envio automático concluído:', result);
+        const { sendAutomaticMessages } = await import('./routes/api.js');
+        const result = await sendAutomaticMessages();
+        console.log('\n✅ Envio automático (5:00 AM) concluído:', JSON.stringify(result, null, 2));
       } catch (error) {
-        console.error('Erro no envio automático:', error);
+        console.error('❌ Erro no envio automático (5:00 AM):', error);
       }
+    } else {
+      console.log('⚠️  Bot não inicializado, pulando envio automático (5:00 AM)');
     }
   });
 
-  console.log('⏰ Agendamento automático configurado: diariamente às 9h');
+  // 12:00 (meio-dia)
+  cron.schedule('0 12 * * *', async () => {
+    if (botInitialized) {
+      console.log('\n⏰ ============================================');
+      console.log('📧 Iniciando envio automático (12:00 PM)...');
+      console.log('============================================\n');
+      try {
+        const { sendAutomaticMessages } = await import('./routes/api.js');
+        const result = await sendAutomaticMessages();
+        console.log('\n✅ Envio automático (12:00 PM) concluído:', JSON.stringify(result, null, 2));
+      } catch (error) {
+        console.error('❌ Erro no envio automático (12:00 PM):', error);
+      }
+    } else {
+      console.log('⚠️  Bot não inicializado, pulando envio automático (12:00 PM)');
+    }
+  });
+
+  // 18:30 (6:30 PM)
+  cron.schedule('30 18 * * *', async () => {
+    if (botInitialized) {
+      console.log('\n⏰ ============================================');
+      console.log('📧 Iniciando envio automático (18:30 PM)...');
+      console.log('============================================\n');
+      try {
+        const { sendAutomaticMessages } = await import('./routes/api.js');
+        const result = await sendAutomaticMessages();
+        console.log('\n✅ Envio automático (18:30 PM) concluído:', JSON.stringify(result, null, 2));
+      } catch (error) {
+        console.error('❌ Erro no envio automático (18:30 PM):', error);
+      }
+    } else {
+      console.log('⚠️  Bot não inicializado, pulando envio automático (18:30 PM)');
+    }
+  });
+
+  console.log('⏰ Agendamentos automáticos configurados:');
+  console.log('   - 5:00 AM (diariamente)');
+  console.log('   - 12:00 PM (diariamente)');
+  console.log('   - 18:30 PM (diariamente)');
 }
 
 startServer();

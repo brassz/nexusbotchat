@@ -741,17 +741,18 @@ function updateProgress(progress) {
     const audioCurrent = progress.audioCurrent || 0;
     const textCurrent = progress.textCurrent || 0;
     
-    // Progresso de áudio
-    const audioTotal = audioSent + audioFailed + audioCurrent;
-    const audioPercent = total > 0 ? Math.round((audioTotal / total) * 100) : 0;
+    // Progresso de áudio - só conta como processado se foi enviado ou falhou
+    // Não contar audioCurrent como processado até que seja realmente enviado
+    const audioProcessed = audioSent + audioFailed;
+    const audioPercent = total > 0 ? Math.min(100, Math.round((audioProcessed / total) * 100)) : 0;
     
     document.getElementById('audioProgressFill').style.width = `${audioPercent}%`;
     document.getElementById('audioProgressPercent').textContent = `${audioPercent}%`;
-    document.getElementById('audioProgressText').textContent = `${audioTotal} / ${total}`;
+    document.getElementById('audioProgressText').textContent = `${audioProcessed} / ${total}`;
     
     if (progress.status === 'sending_audio') {
         document.getElementById('audioStatus').textContent = `Enviando áudio ${audioCurrent} de ${total}...`;
-    } else if (progress.status === 'audio_complete') {
+    } else if (progress.status === 'audio_complete' || progress.status === 'completed') {
         document.getElementById('audioStatus').textContent = `Áudios concluídos: ${audioSent} enviados, ${audioFailed} falhas`;
     } else if (progress.status === 'starting') {
         document.getElementById('audioStatus').textContent = 'Iniciando envio de áudios...';
@@ -759,13 +760,13 @@ function updateProgress(progress) {
         document.getElementById('audioStatus').textContent = 'Aguardando...';
     }
     
-    // Progresso de texto
-    const textTotal = textSent + textFailed + textCurrent;
-    const textPercent = total > 0 ? Math.round((textTotal / total) * 100) : 0;
+    // Progresso de texto - só conta como processado se foi enviado ou falhou
+    const textProcessed = textSent + textFailed;
+    const textPercent = total > 0 ? Math.min(100, Math.round((textProcessed / total) * 100)) : 0;
     
     document.getElementById('textProgressFill').style.width = `${textPercent}%`;
     document.getElementById('textProgressPercent').textContent = `${textPercent}%`;
-    document.getElementById('textProgressText').textContent = `${textTotal} / ${total}`;
+    document.getElementById('textProgressText').textContent = `${textProcessed} / ${total}`;
     
     if (progress.status === 'sending_text') {
         document.getElementById('textStatus').textContent = `Enviando texto ${textCurrent} de ${total}...`;
