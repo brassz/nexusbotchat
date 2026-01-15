@@ -14,31 +14,16 @@ export function generateMessage(loan, client) {
   const pixName = process.env.PIX_NAME || 'Tuane Carla Mendes Tomaz';
 
   let message = `Olá, ${clientName}! 👋\n\n`;
-  message += `Sou *Rafael*, Gestor Financeiro da *XPCRED*.\n\n`;
-  
-  if (daysOverdue > 0) {
-    message += `Identificamos que você possui um empréstimo em atraso há ${daysOverdue} dia${daysOverdue > 1 ? 's' : ''}.\n\n`;
-  } else if (loan.loan_type === 'due_today') {
-    message += `Identificamos que você possui um empréstimo com vencimento hoje.\n\n`;
-  } else {
-    message += `Identificamos que você possui um empréstimo pendente.\n\n`;
-  }
-  
-  message += `📋 *Detalhes do empréstimo:*\n`;
-  message += `• Valor: ${amount}\n`;
-  message += `• Data de vencimento: ${dueDate}\n\n`;
-  
-  message += `Para regularizar sua situação, você pode realizar o pagamento através do PIX:\n\n`;
-  message += `💳 *Dados para PIX:*\n`;
-  message += `Chave PIX: ${pixKey}\n`;
+  message += `Aqui quem fala é o Rafael da equipe XPCRED!\n\n`;
+  message += `Cobrança de pagamento:\n\n`;
+  message += `📋 Empréstimo de ${amount}\n`;
+  message += `🗓 Vencimento: ${dueDate}\n\n`;
+  message += `Para regularizar, pague via PIX:\n\n`;
+  message += `💳 Chave PIX: ${pixKey}\n`;
   message += `Titular: ${pixName}\n`;
   message += `Tipo: CNPJ\n\n`;
-  
-  message += `Após o pagamento, envie o comprovante para que possamos atualizar seu cadastro.\n\n`;
-  message += `Se tiver alguma dúvida ou precisar negociar condições especiais, estou à disposição para ajudar.\n\n`;
-  message += `Atenciosamente,\n`;
-  message += `*Rafael*\n`;
-  message += `Gestor Financeiro - XPCRED 📞`;
+  message += `Envie o comprovante após o pagamento.\n`;
+  message += `Qualquer dúvida, estou à disposição! 😊`;
 
   return message;
 }

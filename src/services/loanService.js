@@ -1,4 +1,4 @@
-import { getSupabaseClient } from '../config/database.js';
+import { getSupabaseClient, getAvailableCompanies } from '../config/database.js';
 
 /**
  * Busca empréstimos com status overdue ou due_today
@@ -211,6 +211,149 @@ export async function getOverdueAndDueTodayLoans(targetDate = null, company = 'f
     console.error('Erro ao buscar empréstimos:', error);
     return [];
   }
+}
+
+/**
+ * Busca apenas empréstimos que vencem hoje (due_today) de uma empresa específica
+ * @param {string} company - Empresa para buscar (franca, litoral, mogiana, imperatriz)
+ * @returns {Promise<Array>} Lista de empréstimos que vencem hoje
+ */
+export async function getDueTodayLoans(company = 'franca') {
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  const supabase = getSupabaseClient(company);
+
+  try {
+    // Buscar empréstimos da tabela loans que vencem hoje
+    const { data: loansData, error: loansError } = await supabase
+      .from('loans')
+      .select(`
+        *,
+        clients (
+          id,
+          name,
+          phone,
+          cpf,
+          email
+        )
+      `)
+      .neq('status', 'paid')
+      .neq('status', 'cancelled');
+
+    if (loansError) {
+      console.error(`Erro ao buscar empréstimos de ${company}:`, loansError);
+    }
+
+    const dueTodayLoans = [];
+
+    // Filtrar apenas os que vencem hoje (não os vencidos)
+    if (loansData) {
+      loansData.forEach(loan => {
+        if (!loan.clients) return;
+        
+        const loanDueDate = normalizeDate(loan.due_date);
+        const daysOverdue = calculateDaysOverdue(loan.due_date);
+        const isDueToday = loanDueDate === todayStr;
+        
+        // Apenas adicionar se vence hoje E não está vencido
+        if (isDueToday && daysOverdue === 0) {
+          dueTodayLoans.push({
+            ...loan,
+            client: loan.clients,
+            days_overdue: 0,
+            loan_type: 'due_today',
+            company: company
+          });
+        }
+      });
+    }
+
+    // Buscar também na tabela partial_paid_loans que vencem hoje
+    const { data: partialPaidLoans, error: partialPaidError } = await supabase
+      .from('partial_paid_loans')
+      .select('*')
+      .eq('due_date', todayStr)
+      .gt('remaining_amount', 0);
+
+    if (partialPaidError) {
+      console.error(`Erro ao buscar partial_paid_loans de ${company}:`, partialPaidError);
+    }
+
+    // Buscar clientes para os empréstimos partial_paid_loans
+    if (partialPaidLoans && partialPaidLoans.length > 0) {
+      const clientIds = [...new Set(partialPaidLoans.map(loan => loan.client_id).filter(Boolean))];
+      
+      if (clientIds.length > 0) {
+        const { data: clientsData, error: clientsError } = await supabase
+          .from('clients')
+          .select('id, name, phone, cpf, email')
+          .in('id', clientIds);
+
+        if (!clientsError && clientsData) {
+          const clientsMap = new Map(clientsData.map(c => [c.id, c]));
+          
+          partialPaidLoans.forEach(loan => {
+            const client = clientsMap.get(loan.client_id);
+            if (client) {
+              dueTodayLoans.push({
+                ...loan,
+                client: client,
+                loan_type: 'due_today',
+                days_overdue: 0,
+                company: company,
+                id: loan.loan_id || loan.id
+              });
+            }
+          });
+        }
+      }
+    }
+
+    // Remover duplicatas
+    const uniqueLoans = [];
+    const seenIds = new Set();
+    const seenClientLoan = new Set();
+
+    dueTodayLoans.forEach(loan => {
+      if (!loan.client || !loan.client.id) return;
+
+      const loanId = loan.loan_id || loan.id;
+      const clientLoanKey = `${loan.client.id}_${loanId}`;
+      
+      if (!seenIds.has(loanId) && !seenClientLoan.has(clientLoanKey)) {
+        seenIds.add(loanId);
+        seenClientLoan.add(clientLoanKey);
+        uniqueLoans.push(loan);
+      }
+    });
+
+    return uniqueLoans;
+  } catch (error) {
+    console.error(`Erro ao buscar empréstimos due_today de ${company}:`, error);
+    return [];
+  }
+}
+
+/**
+ * Busca empréstimos que vencem hoje (due_today) de todas as empresas
+ * @returns {Promise<Array>} Lista de empréstimos que vencem hoje de todas as empresas
+ */
+export async function getDueTodayLoansAllCompanies() {
+  const companies = getAvailableCompanies();
+  const allLoans = [];
+
+  for (const company of companies) {
+    try {
+      const loans = await getDueTodayLoans(company.id);
+      allLoans.push(...loans);
+      console.log(`📊 ${company.name}: ${loans.length} empréstimos que vencem hoje`);
+    } catch (error) {
+      console.error(`❌ Erro ao buscar empréstimos de ${company.name}:`, error);
+    }
+  }
+
+  console.log(`✅ Total de empréstimos que vencem hoje (todas as empresas): ${allLoans.length}`);
+  return allLoans;
 }
 
 /**

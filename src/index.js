@@ -62,22 +62,22 @@ async function startServer() {
     console.log(`📊 Painel disponível em http://localhost:${PORT}`);
   });
 
-  // Agendar envio automático de mensagens
-  // 5:00 da manhã
-  cron.schedule('0 5 * * *', async () => {
+  // Agendar envio automático de mensagens APENAS para empréstimos que vencem hoje
+  // 5:30 da manhã
+  cron.schedule('30 5 * * *', async () => {
     if (botInitialized) {
       console.log('\n⏰ ============================================');
-      console.log('📧 Iniciando envio automático (5:00 AM)...');
+      console.log('📧 Iniciando envio automático (5:30 AM) - APENAS DUE_TODAY...');
       console.log('============================================\n');
       try {
-        const { sendAutomaticMessages } = await import('./routes/api.js');
-        const result = await sendAutomaticMessages();
-        console.log('\n✅ Envio automático (5:00 AM) concluído:', JSON.stringify(result, null, 2));
+        const { sendDueTodayMessages } = await import('./routes/api.js');
+        const result = await sendDueTodayMessages();
+        console.log('\n✅ Envio automático (5:30 AM) concluído:', JSON.stringify(result, null, 2));
       } catch (error) {
-        console.error('❌ Erro no envio automático (5:00 AM):', error);
+        console.error('❌ Erro no envio automático (5:30 AM):', error);
       }
     } else {
-      console.log('⚠️  Bot não inicializado, pulando envio automático (5:00 AM)');
+      console.log('⚠️  Bot não inicializado, pulando envio automático (5:30 AM)');
     }
   });
 
@@ -85,11 +85,11 @@ async function startServer() {
   cron.schedule('0 12 * * *', async () => {
     if (botInitialized) {
       console.log('\n⏰ ============================================');
-      console.log('📧 Iniciando envio automático (12:00 PM)...');
+      console.log('📧 Iniciando envio automático (12:00 PM) - APENAS DUE_TODAY...');
       console.log('============================================\n');
       try {
-        const { sendAutomaticMessages } = await import('./routes/api.js');
-        const result = await sendAutomaticMessages();
+        const { sendDueTodayMessages } = await import('./routes/api.js');
+        const result = await sendDueTodayMessages();
         console.log('\n✅ Envio automático (12:00 PM) concluído:', JSON.stringify(result, null, 2));
       } catch (error) {
         console.error('❌ Erro no envio automático (12:00 PM):', error);
@@ -103,11 +103,11 @@ async function startServer() {
   cron.schedule('30 18 * * *', async () => {
     if (botInitialized) {
       console.log('\n⏰ ============================================');
-      console.log('📧 Iniciando envio automático (18:30 PM)...');
+      console.log('📧 Iniciando envio automático (18:30 PM) - APENAS DUE_TODAY...');
       console.log('============================================\n');
       try {
-        const { sendAutomaticMessages } = await import('./routes/api.js');
-        const result = await sendAutomaticMessages();
+        const { sendDueTodayMessages } = await import('./routes/api.js');
+        const result = await sendDueTodayMessages();
         console.log('\n✅ Envio automático (18:30 PM) concluído:', JSON.stringify(result, null, 2));
       } catch (error) {
         console.error('❌ Erro no envio automático (18:30 PM):', error);
@@ -117,8 +117,8 @@ async function startServer() {
     }
   });
 
-  console.log('⏰ Agendamentos automáticos configurados:');
-  console.log('   - 5:00 AM (diariamente)');
+  console.log('⏰ Agendamentos automáticos configurados (APENAS DUE_TODAY):');
+  console.log('   - 5:30 AM (diariamente)');
   console.log('   - 12:00 PM (diariamente)');
   console.log('   - 18:30 PM (diariamente)');
 }

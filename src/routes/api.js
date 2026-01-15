@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs-extra';
 import { fileURLToPath } from 'url';
-import { getOverdueAndDueTodayLoans, getLoansByDueDate } from '../services/loanService.js';
+import { getOverdueAndDueTodayLoans, getLoansByDueDate, getDueTodayLoansAllCompanies } from '../services/loanService.js';
 import { sendMessagesToOverdueClients, sendMessagesByDueDate, sendMessage, sendAudio, getQRCode, disconnectBot, isBotConnected, restartBot } from '../bot/whatsappBot.js';
 import { generateMessage } from '../services/messageService.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -542,6 +542,80 @@ export async function sendAutomaticMessages() {
     return {
       success: false,
       error: error.message
+    };
+  }
+}
+
+/**
+ * Envia mensagens apenas para empréstimos que vencem hoje (due_today) de todas as empresas
+ * Usado para os agendamentos automáticos (5:30, 12:00, 18:30)
+ */
+export async function sendDueTodayMessages() {
+  try {
+    console.log('\n📅 Buscando empréstimos que vencem HOJE de todas as empresas...');
+    
+    // Buscar apenas empréstimos que vencem hoje de todas as empresas
+    const loans = await getDueTodayLoansAllCompanies();
+    
+    if (loans.length === 0) {
+      console.log('✅ Nenhum empréstimo que vence hoje encontrado.');
+      return {
+        success: true,
+        total: 0,
+        audioSent: 0,
+        audioFailed: 0,
+        textSent: 0,
+        textFailed: 0,
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    console.log(`📊 Encontrados ${loans.length} empréstimos que vencem hoje para processar.`);
+
+    // Criar processo de envio
+    const processId = `due-today-${Date.now()}`;
+    const process = {
+      id: processId,
+      total: loans.length,
+      audioSent: 0,
+      audioFailed: 0,
+      textSent: 0,
+      textFailed: 0,
+      audioCurrent: 0,
+      textCurrent: 0,
+      status: 'starting',
+      stopped: false,
+      loans: loans
+    };
+
+    sendingProcesses.set(processId, process);
+
+    // Enviar mensagens usando a mesma lógica intercalada
+    await sendStagedMessages(processId, loans);
+
+    const finalProcess = sendingProcesses.get(processId);
+    const result = {
+      success: true,
+      total: finalProcess.total,
+      audioSent: finalProcess.audioSent,
+      audioFailed: finalProcess.audioFailed,
+      textSent: finalProcess.textSent,
+      textFailed: finalProcess.textFailed,
+      timestamp: new Date().toISOString()
+    };
+
+    // Limpar processo após conclusão
+    sendingProcesses.delete(processId);
+
+    console.log(`✅ Envio de mensagens due_today concluído: ${finalProcess.textSent} textos enviados`);
+    
+    return result;
+  } catch (error) {
+    console.error('❌ Erro no envio de mensagens due_today:', error);
+    return {
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
     };
   }
 }
