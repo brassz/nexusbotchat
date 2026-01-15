@@ -584,7 +584,7 @@ async function sendStagedMessages(processId, loans) {
       if (loan.client && loan.client.phone) {
         if (hasAudio) {
           try {
-            console.log(`Enviando áudio ${audioIndex + 1}/${audioQueue.length} para ${loan.client.phone}`);
+            console.log(`📤 Enviando áudio ${audioIndex + 1}/${audioQueue.length} para ${loan.client.phone}`);
             const success = await sendAudio(loan.client.phone, audioFile);
             if (success) {
               process.audioSent++;
@@ -606,11 +606,23 @@ async function sendStagedMessages(processId, loans) {
       audioIndex++;
       audioCount++;
 
-      // Delay de 5 minutos entre áudios (sempre que houver próximo áudio na sequência)
-      if (audioIndex < audioQueue.length && audioCount < 2 && !process.stopped) {
+      // SEMPRE aplicar delay de 5 minutos após enviar áudio (exceto se for o último envio de tudo)
+      // Verificar se ainda há mais itens para enviar (áudios ou textos)
+      const stillHasAudio = audioIndex < audioQueue.length;
+      const stillHasText = textIndex < textQueue.length;
+      const isNotLastItem = stillHasAudio || stillHasText;
+      
+      if (isNotLastItem && !process.stopped) {
         const delayMinutes = AUDIO_DELAY / 1000 / 60;
-        console.log(`⏳ Aguardando ${delayMinutes} minutos antes do próximo áudio...`);
-        await new Promise(resolve => setTimeout(resolve, AUDIO_DELAY));
+        const delayMs = AUDIO_DELAY;
+        console.log(`⏳ Aguardando ${delayMinutes} minutos (${delayMs}ms) antes do próximo envio...`);
+        console.log(`   Status: audioIndex=${audioIndex}/${audioQueue.length}, textIndex=${textIndex}/${textQueue.length}, audioCount=${audioCount}`);
+        const startTime = Date.now();
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        const elapsed = Date.now() - startTime;
+        console.log(`✅ Delay concluído: ${elapsed}ms aguardados`);
+      } else {
+        console.log(`ℹ️  Último item enviado, sem delay necessário`);
       }
     } 
     // Depois enviar 1 texto
@@ -621,7 +633,7 @@ async function sendStagedMessages(processId, loans) {
 
       if (loan.client && loan.client.phone) {
         try {
-          console.log(`Enviando texto ${textIndex + 1}/${textQueue.length} para ${loan.client.phone}`);
+          console.log(`📤 Enviando texto ${textIndex + 1}/${textQueue.length} para ${loan.client.phone}`);
           const message = generateMessage(loan, loan.client);
           const success = await sendMessage(loan.client.phone, message, false); // false = não enviar áudio
 
@@ -641,11 +653,22 @@ async function sendStagedMessages(processId, loans) {
       textIndex++;
       audioCount = 0; // Resetar contador para enviar mais 2 áudios
 
-      // Delay de 5 minutos entre textos (antes de voltar a enviar áudios)
-      if (audioIndex < audioQueue.length && !process.stopped) {
+      // SEMPRE aplicar delay de 5 minutos após enviar texto (exceto se for o último envio de tudo)
+      const hasMoreAudio = audioIndex < audioQueue.length;
+      const hasMoreText = textIndex < textQueue.length;
+      const hasMoreToSend = hasMoreAudio || hasMoreText;
+      
+      if (hasMoreToSend && !process.stopped) {
         const delayMinutes = TEXT_DELAY / 1000 / 60;
-        console.log(`⏳ Aguardando ${delayMinutes} minutos antes do próximo ciclo (2 áudios)...`);
-        await new Promise(resolve => setTimeout(resolve, TEXT_DELAY));
+        const delayMs = TEXT_DELAY;
+        console.log(`⏳ Aguardando ${delayMinutes} minutos (${delayMs}ms) antes do próximo envio...`);
+        console.log(`   Status: audioIndex=${audioIndex}/${audioQueue.length}, textIndex=${textIndex}/${textQueue.length}`);
+        const startTime = Date.now();
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        const elapsed = Date.now() - startTime;
+        console.log(`✅ Delay concluído: ${elapsed}ms aguardados`);
+      } else {
+        console.log(`ℹ️  Último item enviado, sem delay necessário`);
       }
     } else {
       // Se não há mais nada para enviar, sair do loop
@@ -684,12 +707,17 @@ async function sendStagedMessages(processId, loans) {
     audioIndex++;
 
     if (audioIndex < audioQueue.length && !process.stopped) {
-      console.log(`Aguardando ${AUDIO_DELAY / 1000 / 60} minutos antes do próximo áudio...`);
-      await new Promise(resolve => setTimeout(resolve, AUDIO_DELAY));
+      const delayMinutes = AUDIO_DELAY / 1000 / 60;
+      const delayMs = AUDIO_DELAY;
+      console.log(`⏳ Aguardando ${delayMinutes} minutos (${delayMs}ms) antes do próximo áudio restante...`);
+      const startTime = Date.now();
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      const elapsed = Date.now() - startTime;
+      console.log(`✅ Delay concluído: ${elapsed}ms aguardados`);
     }
   }
 
-  // Enviar textos restantes
+  // Enviar textos restantes - SEMPRE com delay de 5 minutos entre cada
   while (textIndex < textQueue.length && !process.stopped) {
     const loan = textQueue[textIndex];
     process.textCurrent = textIndex + 1;
@@ -716,9 +744,15 @@ async function sendStagedMessages(processId, loans) {
 
     textIndex++;
 
+    // SEMPRE aplicar delay de 5 minutos antes do próximo texto (exceto se for o último)
     if (textIndex < textQueue.length && !process.stopped) {
-      console.log(`Aguardando ${TEXT_DELAY / 1000 / 60} minutos antes do próximo texto...`);
-      await new Promise(resolve => setTimeout(resolve, TEXT_DELAY));
+      const delayMinutes = TEXT_DELAY / 1000 / 60;
+      const delayMs = TEXT_DELAY;
+      console.log(`⏳ Aguardando ${delayMinutes} minutos (${delayMs}ms) antes do próximo texto restante...`);
+      const startTime = Date.now();
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      const elapsed = Date.now() - startTime;
+      console.log(`✅ Delay concluído: ${elapsed}ms aguardados`);
     }
   }
 

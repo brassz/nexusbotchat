@@ -158,8 +158,13 @@ export async function sendMessage(phoneNumber, message, sendAudioFirst = false) 
       if (audioPath) {
         try {
           await sendAudio(phoneNumber, audioPath);
-          // Aguardar 1 segundo após enviar áudio
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Aguardar 5 minutos após enviar áudio antes de enviar o texto
+          const DELAY_BETWEEN_AUDIO_AND_TEXT = 5 * 60 * 1000; // 5 minutos em milissegundos
+          console.log(`⏳ Aguardando 5 minutos após enviar áudio antes de enviar texto...`);
+          const startTime = Date.now();
+          await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_AUDIO_AND_TEXT));
+          const elapsed = Date.now() - startTime;
+          console.log(`✅ Delay concluído: ${elapsed}ms aguardados, enviando texto agora...`);
         } catch (error) {
           console.error(`Erro ao enviar áudio, continuando com mensagem:`, error);
         }

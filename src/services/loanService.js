@@ -40,8 +40,10 @@ export async function getOverdueAndDueTodayLoans(targetDate = null, company = 'f
       allLoansData.forEach(loan => {
         if (!loan.clients) return; // Pular se não tiver cliente
         
+        // Normalizar due_date para comparação (remover hora se houver)
+        const loanDueDate = normalizeDate(loan.due_date);
         const daysOverdue = calculateDaysOverdue(loan.due_date);
-        const isDueToday = loan.due_date === todayStr;
+        const isDueToday = loanDueDate === todayStr;
         const isOverdue = daysOverdue > 0 || loan.status === 'overdue';
 
         if (isOverdue || isDueToday) {
@@ -88,6 +90,7 @@ export async function getOverdueAndDueTodayLoans(targetDate = null, company = 'f
 
     // Buscar também na tabela partial_paid_loans que estão vencidos ou vencem hoje
     // Nota: Esta tabela pode não ter relacionamento direto com clients, buscar separadamente
+    // Buscar apenas os que vencem hoje ou antes (não depois de hoje)
     const { data: partialPaidLoans, error: partialPaidError } = await supabase
       .from('partial_paid_loans')
       .select('*')
@@ -154,18 +157,26 @@ export async function getOverdueAndDueTodayLoans(targetDate = null, company = 'f
     }
 
     // Processar empréstimos da tabela partial_paid_loans
+    // Filtrar apenas os que vencem hoje ou estão vencidos (não os que vencem depois)
     if (partialPaidLoansWithClients && partialPaidLoansWithClients.length > 0) {
       partialPaidLoansWithClients.forEach(loan => {
         if (loan.clients) {
+          // Normalizar due_date para comparação
+          const loanDueDate = normalizeDate(loan.due_date);
           const daysOverdue = calculateDaysOverdue(loan.due_date);
-          const isDueToday = loan.due_date === todayStr;
-          allLoans.push({
-            ...loan,
-            client: loan.clients,
-            loan_type: isDueToday ? 'due_today' : 'partial_paid',
-            days_overdue: daysOverdue,
-            id: loan.loan_id || loan.id
-          });
+          const isDueToday = loanDueDate === todayStr;
+          const isOverdue = daysOverdue > 0;
+          
+          // Só adicionar se vence hoje ou está vencido (não se vence depois)
+          if (isDueToday || isOverdue) {
+            allLoans.push({
+              ...loan,
+              client: loan.clients,
+              loan_type: isDueToday ? 'due_today' : 'partial_paid',
+              days_overdue: daysOverdue,
+              id: loan.loan_id || loan.id
+            });
+          }
         }
       });
     }
@@ -243,9 +254,26 @@ export async function getLoansByDueDate(dueDate, company = 'franca') {
 }
 
 /**
+ * Normaliza uma data para string no formato YYYY-MM-DD
+ */
+function normalizeDate(dateString) {
+  if (!dateString) return null;
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return null;
+    return date.toISOString().split('T')[0];
+  } catch (error) {
+    console.error('Erro ao normalizar data:', dateString, error);
+    return null;
+  }
+}
+
+/**
  * Calcula dias em atraso
  */
 function calculateDaysOverdue(dueDate) {
+  if (!dueDate) return 0;
+  
   const due = new Date(dueDate);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
