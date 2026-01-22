@@ -41,13 +41,29 @@ export async function initializeBot() {
         console.log('═══════════════════════════════════════════');
         console.log(asciiQR);
         console.log('═══════════════════════════════════════════');
+        
+        // Verificar se o QR Code está no formato correto
+        if (!base64Qr) {
+          console.error('❌ QR Code base64 está vazio!');
+          return;
+        }
+        
+        // Garantir que o QR Code está no formato correto (data:image/png;base64,)
+        let qrCodeFormatted = base64Qr;
+        if (!qrCodeFormatted.startsWith('data:image')) {
+          // Se não começar com data:image, adicionar o prefixo
+          qrCodeFormatted = `data:image/png;base64,${base64Qr}`;
+        }
+        
         // Armazenar QR Code para API
-        currentQRCode = base64Qr;
-        console.log('✅ QR Code armazenado (tamanho base64):', base64Qr ? base64Qr.length : 0);
+        currentQRCode = qrCodeFormatted;
+        console.log('✅ QR Code armazenado (tamanho base64):', qrCodeFormatted ? qrCodeFormatted.length : 0);
+        console.log('✅ QR Code formato:', qrCodeFormatted.substring(0, 50) + '...');
+        
         // Notificar listeners
         qrCodeListeners.forEach(listener => {
           try {
-            listener(base64Qr);
+            listener(qrCodeFormatted);
           } catch (error) {
             console.error('Erro ao notificar listener do QR Code:', error);
           }
@@ -106,37 +122,141 @@ export async function sendAudio(phoneNumber, audioPath) {
     throw new Error('Bot não inicializado');
   }
 
+  // Verificar se o cliente ainda está válido (verificação mais flexível)
+  // O wppconnect pode não expor browser/page diretamente, então verificamos se client existe e tem métodos
+  if (!client || typeof client.sendPtt !== 'function' && typeof client.sendFile !== 'function') {
+    console.error('❌ Cliente do WhatsApp não está mais válido ou métodos não disponíveis');
+    throw new Error('WhatsApp desconectado. Reconecte o bot.');
+  }
+
   try {
     const formattedNumber = formatPhoneNumber(phoneNumber);
     
-    // Ler o arquivo de áudio como base64
-    const audioBuffer = fs.readFileSync(audioPath);
-    const audioBase64 = audioBuffer.toString('base64');
+    // Verificar se o arquivo de áudio existe
+    if (!fs.existsSync(audioPath)) {
+      console.error(`❌ Arquivo de áudio não encontrado: ${audioPath}`);
+      console.error(`   Verifique se o arquivo existe no caminho especificado.`);
+      return false;
+    }
     
-    // Enviar áudio usando sendPtt (Push to Talk) - formato de áudio do WhatsApp
-    // sendPtt espera: (number, base64Audio, filename)
+    // Verificar se é um arquivo válido
+    const stats = fs.statSync(audioPath);
+    if (!stats.isFile()) {
+      console.error(`❌ O caminho especificado não é um arquivo: ${audioPath}`);
+      return false;
+    }
+    
+    console.log(`📤 Tentando enviar áudio: ${audioPath} (${(stats.size / 1024).toFixed(2)} KB)`);
+    
+    // Tentar primeiro com sendPtt usando o caminho do arquivo diretamente
+    // O wppconnect pode aceitar tanto base64 quanto caminho de arquivo
     if (client.sendPtt) {
-      await client.sendPtt(formattedNumber, audioBase64, 'mensagem.mp3');
-      console.log(`Áudio enviado (PTT) para ${phoneNumber}`);
-      return true;
+      try {
+        // Tentar primeiro com o caminho do arquivo (mais comum no wppconnect)
+        await client.sendPtt(formattedNumber, audioPath);
+        console.log(`✅ Áudio enviado (PTT - caminho) para ${phoneNumber}`);
+        return true;
+      } catch (pttError) {
+        // Se falhar, tentar com base64
+        if (pttError.message && !pttError.message.includes('No such file')) {
+          // Verificar se é erro de frame desconectado
+          if (pttError.message && (pttError.message.includes('detached Frame') || pttError.message.includes('Target closed'))) {
+            throw pttError; // Vai para o catch externo
+          }
+          
+          // Tentar com base64
+          try {
+            const audioBuffer = fs.readFileSync(audioPath);
+            const audioBase64 = audioBuffer.toString('base64');
+            await client.sendPtt(formattedNumber, audioBase64, 'mensagem.mp3');
+            console.log(`✅ Áudio enviado (PTT - base64) para ${phoneNumber}`);
+            return true;
+          } catch (base64Error) {
+            console.warn(`⚠️ Erro ao enviar PTT com base64, tentando método alternativo:`, base64Error.message);
+            throw base64Error; // Vai para o catch externo para tentar sendFile
+          }
+        } else {
+          // Se o erro for "No such file", tentar método alternativo diretamente
+          console.warn(`⚠️ Erro ao enviar PTT (arquivo não encontrado), tentando método alternativo:`, pttError.message);
+          throw pttError; // Vai para o catch externo para tentar sendFile
+        }
+      }
     } else {
       // Método alternativo: enviar como arquivo
       await client.sendFile(formattedNumber, audioPath);
-      console.log(`Áudio enviado (arquivo) para ${phoneNumber}`);
+      console.log(`✅ Áudio enviado (arquivo) para ${phoneNumber}`);
       return true;
     }
   } catch (error) {
-    console.error(`Erro ao enviar áudio para ${phoneNumber}:`, error);
-    // Tentar método alternativo com sendFile
-    try {
-      const formattedNumber = formatPhoneNumber(phoneNumber);
-      await client.sendFile(formattedNumber, audioPath);
-      console.log(`Áudio enviado (método alternativo) para ${phoneNumber}`);
-      return true;
-    } catch (error2) {
-      console.error(`Erro ao enviar áudio (método alternativo):`, error2);
+    // Verificar se é erro de frame desconectado
+    if (error.message && (error.message.includes('detached Frame') || error.message.includes('Target closed'))) {
+      console.error(`❌ Erro: Navegador/frame desconectado ao enviar áudio para ${phoneNumber}`);
+      console.error(`   Isso geralmente significa que o WhatsApp foi desconectado ou o navegador foi fechado.`);
+      console.error(`   Recomendação: Reconecte o bot ou reinicie o servidor.`);
       return false;
     }
+    
+    console.error(`❌ Erro ao enviar áudio para ${phoneNumber}:`, error.message || error);
+    
+    // Verificar se o erro é relacionado a arquivo não encontrado
+    const isFileError = error.message && (
+      error.message.includes('No such file') || 
+      error.message.includes('ENOENT') ||
+      error.message.includes('cannot find') ||
+      (typeof error === 'object' && error.text && error.text.includes('No such file'))
+    );
+    
+    if (isFileError) {
+      console.error(`❌ Erro: Arquivo de áudio não encontrado ou inválido: ${audioPath}`);
+      console.error(`   Verifique se o arquivo existe e está acessível.`);
+      return false;
+    }
+    
+    // Tentar método alternativo apenas se não for erro de frame desconectado ou arquivo
+    if (!error.message || (!error.message.includes('detached Frame') && !error.message.includes('Target closed') && !error.message.includes('WhatsApp desconectado') && !isFileError)) {
+      try {
+        // Verificar novamente se o cliente está válido
+        if (!client || (typeof client.sendFile !== 'function' && typeof client.sendPtt !== 'function')) {
+          console.error('❌ Cliente inválido, não é possível tentar método alternativo');
+          return false;
+        }
+        
+        // Verificar se o arquivo ainda existe antes de tentar método alternativo
+        if (!fs.existsSync(audioPath)) {
+          console.error(`❌ Arquivo de áudio não encontrado para método alternativo: ${audioPath}`);
+          return false;
+        }
+        
+        const formattedNumber = formatPhoneNumber(phoneNumber);
+        await client.sendFile(formattedNumber, audioPath);
+        console.log(`✅ Áudio enviado (método alternativo - sendFile) para ${phoneNumber}`);
+        return true;
+      } catch (error2) {
+        // Verificar se é erro de frame desconectado também no método alternativo
+        if (error2.message && (error2.message.includes('detached Frame') || error2.message.includes('Target closed'))) {
+          console.error(`❌ Erro: Navegador/frame desconectado no método alternativo para ${phoneNumber}`);
+          return false;
+        }
+        
+        // Verificar se é erro de arquivo
+        const isFileError2 = error2.message && (
+          error2.message.includes('No such file') || 
+          error2.message.includes('ENOENT') ||
+          error2.message.includes('cannot find') ||
+          (typeof error2 === 'object' && error2.text && error2.text.includes('No such file'))
+        );
+        
+        if (isFileError2) {
+          console.error(`❌ Erro: Arquivo de áudio não encontrado no método alternativo: ${audioPath}`);
+          return false;
+        }
+        
+        console.error(`❌ Erro ao enviar áudio (método alternativo):`, error2.message || error2);
+        return false;
+      }
+    }
+    
+    return false;
   }
 }
 
@@ -148,16 +268,35 @@ export async function sendMessage(phoneNumber, message, sendAudioFirst = false) 
     throw new Error('Bot não inicializado');
   }
 
+  if (!phoneNumber) {
+    throw new Error('Número de telefone não fornecido');
+  }
+
+  // Verificar se o cliente ainda está válido (verificação mais flexível)
+  if (!client || typeof client.sendText !== 'function') {
+    console.error('❌ Cliente do WhatsApp não está mais válido ou métodos não disponíveis');
+    throw new Error('WhatsApp desconectado. Reconecte o bot.');
+  }
+
   try {
     // Formatar número (remover caracteres especiais e adicionar @c.us)
-    const formattedNumber = formatPhoneNumber(phoneNumber);
+    let formattedNumber;
+    try {
+      formattedNumber = formatPhoneNumber(phoneNumber);
+    } catch (formatError) {
+      console.error(`❌ Erro ao formatar número ${phoneNumber}:`, formatError.message);
+      throw new Error(`Número de telefone inválido: ${phoneNumber}. ${formatError.message}`);
+    }
     
     // Se houver áudio configurado e sendAudioFirst for true, enviar áudio primeiro
     if (sendAudioFirst) {
       const audioPath = getAudioPath();
       if (audioPath) {
         try {
-          await sendAudio(phoneNumber, audioPath);
+          const audioSent = await sendAudio(phoneNumber, audioPath);
+          if (!audioSent) {
+            console.warn(`⚠️ Áudio não foi enviado para ${phoneNumber}, mas continuando com mensagem de texto...`);
+          }
           // Aguardar 5 minutos após enviar áudio antes de enviar o texto
           const DELAY_BETWEEN_AUDIO_AND_TEXT = 5 * 60 * 1000; // 5 minutos em milissegundos
           console.log(`⏳ Aguardando 5 minutos após enviar áudio antes de enviar texto...`);
@@ -166,16 +305,77 @@ export async function sendMessage(phoneNumber, message, sendAudioFirst = false) 
           const elapsed = Date.now() - startTime;
           console.log(`✅ Delay concluído: ${elapsed}ms aguardados, enviando texto agora...`);
         } catch (error) {
-          console.error(`Erro ao enviar áudio, continuando com mensagem:`, error);
+          // Se for erro de frame desconectado, não continuar
+          if (error.message && (error.message.includes('detached Frame') || error.message.includes('Target closed') || error.message.includes('WhatsApp desconectado'))) {
+            console.error(`❌ WhatsApp desconectado ao enviar áudio para ${phoneNumber}. Abortando envio.`);
+            throw error;
+          }
+          console.error(`⚠️ Erro ao enviar áudio, continuando com mensagem:`, error.message || error);
         }
       }
     }
     
-    await client.sendText(formattedNumber, message);
-    console.log(`Mensagem enviada para ${phoneNumber}`);
-    return true;
+    // Verificar se o número está no formato correto antes de enviar
+    if (!formattedNumber.includes('@c.us')) {
+      throw new Error(`Número formatado incorretamente: ${formattedNumber}`);
+    }
+    
+    // Tentar enviar a mensagem
+    try {
+      await client.sendText(formattedNumber, message);
+      console.log(`✅ Mensagem enviada para ${phoneNumber} (${formattedNumber})`);
+      return true;
+    } catch (sendError) {
+      // Verificar se é erro de frame desconectado
+      if (sendError.message && (sendError.message.includes('detached Frame') || sendError.message.includes('Target closed'))) {
+        console.error(`❌ Erro: Navegador/frame desconectado ao enviar mensagem para ${phoneNumber}`);
+        console.error(`   Isso geralmente significa que o WhatsApp foi desconectado ou o navegador foi fechado.`);
+        throw new Error('WhatsApp desconectado. Reconecte o bot.');
+      }
+      
+      // Se o erro for "No LID for user", o número pode não estar no WhatsApp
+      if (sendError.message && sendError.message.includes('No LID for user')) {
+        console.error(`❌ Número ${phoneNumber} (${formattedNumber}) não encontrado no WhatsApp ou formato inválido`);
+        console.error(`   Dica: Verifique se o número está correto e se está registrado no WhatsApp`);
+        // Tentar formatar novamente sem o @c.us e adicionar novamente
+        const numberOnly = formattedNumber.replace('@c.us', '');
+        if (numberOnly.length >= 12 && numberOnly.length <= 13) {
+          console.log(`   Tentando reenviar com número: ${numberOnly}@c.us`);
+          try {
+            // Verificar novamente se o cliente está válido
+            if (!client || typeof client.sendText !== 'function') {
+              throw new Error('WhatsApp desconectado durante a segunda tentativa');
+            }
+            await client.sendText(numberOnly + '@c.us', message);
+            console.log(`✅ Mensagem enviada na segunda tentativa para ${phoneNumber}`);
+            return true;
+          } catch (retryError) {
+            if (retryError.message && (retryError.message.includes('detached Frame') || retryError.message.includes('Target closed'))) {
+              console.error(`❌ Erro: Navegador/frame desconectado na segunda tentativa`);
+              throw new Error('WhatsApp desconectado. Reconecte o bot.');
+            }
+            console.error(`❌ Erro na segunda tentativa:`, retryError.message);
+          }
+        }
+      }
+      throw sendError;
+    }
   } catch (error) {
-    console.error(`Erro ao enviar mensagem para ${phoneNumber}:`, error);
+    // Verificar se é erro de frame desconectado
+    if (error.message && (error.message.includes('detached Frame') || error.message.includes('Target closed') || error.message.includes('WhatsApp desconectado'))) {
+      console.error(`❌ WhatsApp desconectado ao enviar mensagem para ${phoneNumber}`);
+      console.error(`   Recomendação: Reconecte o bot ou reinicie o servidor.`);
+      return false;
+    }
+    
+    console.error(`❌ Erro ao enviar mensagem para ${phoneNumber}:`, error.message || error);
+    // Log mais detalhado para debug
+    if (error.message) {
+      console.error(`   Mensagem de erro: ${error.message}`);
+    }
+    if (error.stack) {
+      console.error(`   Stack trace: ${error.stack.substring(0, 200)}...`);
+    }
     return false;
   }
 }
@@ -196,10 +396,11 @@ function getAudioPath() {
 
 /**
  * Envia mensagens para todos os clientes com empréstimos overdue ou due_today
+ * @param {string} company - Empresa para buscar (franca, litoral, mogiana, imperatriz)
  */
-export async function sendMessagesToOverdueClients() {
+export async function sendMessagesToOverdueClients(company = 'franca') {
   try {
-    const loans = await getOverdueAndDueTodayLoans();
+    const loans = await getOverdueAndDueTodayLoans(null, company);
     
     if (loans.length === 0) {
       console.log('Nenhum empréstimo encontrado para envio de mensagens.');
@@ -281,18 +482,83 @@ export async function sendMessagesByDueDate(dueDate) {
 
 /**
  * Formata número de telefone para o formato do WhatsApp
+ * @param {string} phone - Número de telefone
+ * @returns {string} Número formatado no padrão WhatsApp
  */
 function formatPhoneNumber(phone) {
+  if (!phone) {
+    throw new Error('Número de telefone não fornecido');
+  }
+  
   // Remove caracteres especiais
   let cleaned = phone.replace(/\D/g, '');
   
+  // Validar se o número tem pelo menos 10 dígitos (DDD + número mínimo)
+  if (cleaned.length < 10) {
+    throw new Error(`Número de telefone muito curto: ${phone} (${cleaned.length} dígitos). Número deve ter pelo menos 10 dígitos (DDD + número)`);
+  }
+  
+  // Remove zeros à esquerda do DDD (ex: 016 -> 16)
+  if (cleaned.length > 10 && cleaned.startsWith('550')) {
+    cleaned = '55' + cleaned.substring(3);
+  }
+  
   // Se não começar com 55 (código do Brasil), adiciona
   if (!cleaned.startsWith('55')) {
-    cleaned = '55' + cleaned;
+    // Se começar com 0, remove o 0 e adiciona 55
+    if (cleaned.startsWith('0')) {
+      cleaned = '55' + cleaned.substring(1);
+    } else {
+      // Verificar se já tem DDD (2 primeiros dígitos entre 11-99)
+      const firstTwo = cleaned.substring(0, 2);
+      const ddd = parseInt(firstTwo);
+      
+      // Se os dois primeiros dígitos são um DDD válido (11-99), adicionar 55
+      if (ddd >= 11 && ddd <= 99 && cleaned.length >= 10) {
+        cleaned = '55' + cleaned;
+      } else {
+        // Se não parece ter DDD, assumir que precisa adicionar
+        cleaned = '55' + cleaned;
+      }
+    }
+  }
+  
+  // Validar tamanho do número (deve ter pelo menos 12 dígitos: 55 + DDD + número)
+  // Formato esperado: 55 + DDD (2 dígitos) + número (8 ou 9 dígitos)
+  if (cleaned.length < 12 || cleaned.length > 13) {
+    console.warn(`⚠️ Número de telefone com tamanho inválido: ${cleaned} (${cleaned.length} dígitos) - Original: ${phone}`);
+    
+    // Tentar corrigir removendo zeros extras
+    if (cleaned.length > 13) {
+      // Pode ter zeros extras, tentar remover
+      const match = cleaned.match(/^55(\d{2})(\d{8,9})/);
+      if (match) {
+        cleaned = '55' + match[1] + match[2];
+        console.log(`✅ Número corrigido: ${cleaned}`);
+      }
+    }
+  }
+  
+  // Garantir que o número tenha exatamente 12 ou 13 dígitos (55 + DDD + número)
+  if (cleaned.length < 12) {
+    throw new Error(`Número de telefone muito curto: ${phone} -> ${cleaned} (${cleaned.length} dígitos). Formato esperado: 55 + DDD (2 dígitos) + número (8 ou 9 dígitos). Número mínimo: 12 dígitos`);
+  }
+  
+  if (cleaned.length > 13) {
+    throw new Error(`Número de telefone muito longo: ${phone} -> ${cleaned} (${cleaned.length} dígitos). Formato esperado: 55 + DDD (2 dígitos) + número (8 ou 9 dígitos). Número máximo: 13 dígitos`);
+  }
+  
+  // Validar que o DDD está no formato correto (após o 55)
+  const ddd = cleaned.substring(2, 4);
+  const dddNum = parseInt(ddd);
+  if (dddNum < 11 || dddNum > 99) {
+    throw new Error(`DDD inválido no número: ${phone} -> ${cleaned}. DDD deve estar entre 11 e 99`);
   }
   
   // Adiciona @c.us para o formato do WhatsApp
-  return cleaned + '@c.us';
+  const formatted = cleaned + '@c.us';
+  console.log(`✅ Número formatado: ${phone} -> ${formatted}`);
+  return formatted;
 }
 
 /**

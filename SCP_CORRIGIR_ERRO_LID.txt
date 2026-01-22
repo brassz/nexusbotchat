@@ -1,27 +1,20 @@
 ═══════════════════════════════════════════════════════════════
-  COMANDOS SCP - AUTOMAÇÃO DUE_TODAY
+  COMANDOS SCP - CORRIGIR ERRO "No LID for user"
   Execute no PowerShell ou Terminal
   
-  ⚠️  NOVA FUNCIONALIDADE: Automação de envio para empréstimos que vencem hoje
-  Horários: 5:30 AM, 12:00 PM, 18:30 PM
+  ⚠️  CORREÇÃO: Melhorada formatação e validação de números de telefone
+  - Validação melhorada do formato do número
+  - Tratamento de erro "No LID for user" mais robusto
+  - Logs mais detalhados para debug
+  - Tentativa de reenvio com formatação alternativa
 ═══════════════════════════════════════════════════════════════
 
-1️⃣  TRANSFERIR src/services/loanService.js
+1️⃣  TRANSFERIR src/bot/whatsappBot.js
 ───────────────────────────────────────────────────────────────
-scp src/services/loanService.js root@212.85.19.210:/var/www/nexusbot/src/services/
+scp src/bot/whatsappBot.js root@212.85.19.210:/var/www/nexusbot/src/bot/
 
 
-2️⃣  TRANSFERIR src/routes/api.js
-───────────────────────────────────────────────────────────────
-scp src/routes/api.js root@212.85.19.210:/var/www/nexusbot/src/routes/
-
-
-3️⃣  TRANSFERIR src/index.js
-───────────────────────────────────────────────────────────────
-scp src/index.js root@212.85.19.210:/var/www/nexusbot/src/
-
-
-4️⃣  REINICIAR O BOT
+2️⃣  REINICIAR O BOT
 ───────────────────────────────────────────────────────────────
 ssh root@212.85.19.210 "cd /var/www/nexusbot && pm2 restart nexusbot"
 
@@ -30,10 +23,22 @@ ssh root@212.85.19.210 "cd /var/www/nexusbot && pm2 restart nexusbot"
   COMANDO COMPLETO (EXECUTAR TUDO DE UMA VEZ):
 ═══════════════════════════════════════════════════════════════
 
-scp src/services/loanService.js root@212.85.19.210:/var/www/nexusbot/src/services/ && scp src/routes/api.js root@212.85.19.210:/var/www/nexusbot/src/routes/ && scp src/index.js root@212.85.19.210:/var/www/nexusbot/src/ && ssh root@212.85.19.210 "cd /var/www/nexusbot && pm2 restart nexusbot"
+scp src/bot/whatsappBot.js root@212.85.19.210:/var/www/nexusbot/src/bot/ && ssh root@212.85.19.210 "cd /var/www/nexusbot && pm2 restart nexusbot"
 
 
 ═══════════════════════════════════════════════════════════════
-
-
+  NOTAS:
+═══════════════════════════════════════════════════════════════
+  
+  O erro "No LID for user" pode ocorrer quando:
+  - O número não está registrado no WhatsApp
+  - O número está em formato incorreto
+  - O número precisa ser verificado antes de enviar
+  
+  A correção agora:
+  - Valida melhor o formato do número
+  - Tenta reenviar com formatação alternativa
+  - Fornece logs mais detalhados para identificar o problema
+  
+═══════════════════════════════════════════════════════════════
 

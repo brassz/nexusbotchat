@@ -1,27 +1,19 @@
 ═══════════════════════════════════════════════════════════════
-  COMANDOS SCP - AUTOMAÇÃO DUE_TODAY
+  COMANDOS SCP - QR CODE NO PAINEL
   Execute no PowerShell ou Terminal
   
-  ⚠️  NOVA FUNCIONALIDADE: Automação de envio para empréstimos que vencem hoje
-  Horários: 5:30 AM, 12:00 PM, 18:30 PM
+  ⚠️  MELHORIA: QR Code agora aparece automaticamente no painel
+  - Quando o QR Code é gerado, a aba QR Code é aberta automaticamente
+  - Notificação toast informa quando o QR Code está disponível
+  - QR Code já estava implementado, agora é exibido automaticamente
 ═══════════════════════════════════════════════════════════════
 
-1️⃣  TRANSFERIR src/services/loanService.js
+1️⃣  TRANSFERIR public/script.js
 ───────────────────────────────────────────────────────────────
-scp src/services/loanService.js root@212.85.19.210:/var/www/nexusbot/src/services/
+scp public/script.js root@212.85.19.210:/var/www/nexusbot/public/
 
 
-2️⃣  TRANSFERIR src/routes/api.js
-───────────────────────────────────────────────────────────────
-scp src/routes/api.js root@212.85.19.210:/var/www/nexusbot/src/routes/
-
-
-3️⃣  TRANSFERIR src/index.js
-───────────────────────────────────────────────────────────────
-scp src/index.js root@212.85.19.210:/var/www/nexusbot/src/
-
-
-4️⃣  REINICIAR O BOT
+2️⃣  REINICIAR O BOT (OPCIONAL - não necessário se só mudou frontend)
 ───────────────────────────────────────────────────────────────
 ssh root@212.85.19.210 "cd /var/www/nexusbot && pm2 restart nexusbot"
 
@@ -30,10 +22,20 @@ ssh root@212.85.19.210 "cd /var/www/nexusbot && pm2 restart nexusbot"
   COMANDO COMPLETO (EXECUTAR TUDO DE UMA VEZ):
 ═══════════════════════════════════════════════════════════════
 
-scp src/services/loanService.js root@212.85.19.210:/var/www/nexusbot/src/services/ && scp src/routes/api.js root@212.85.19.210:/var/www/nexusbot/src/routes/ && scp src/index.js root@212.85.19.210:/var/www/nexusbot/src/ && ssh root@212.85.19.210 "cd /var/www/nexusbot && pm2 restart nexusbot"
+scp public/script.js root@212.85.19.210:/var/www/nexusbot/public/
 
 
 ═══════════════════════════════════════════════════════════════
-
-
+  NOTAS:
+═══════════════════════════════════════════════════════════════
+  
+  O QR Code já estava implementado no painel na aba "QR Code".
+  Agora, quando o QR Code é gerado pelo bot, a aba é aberta
+  automaticamente e uma notificação é exibida.
+  
+  O QR Code é atualizado automaticamente a cada:
+  - 1 segundo quando na aba QR Code
+  - 3 segundos quando em outras abas
+  
+═══════════════════════════════════════════════════════════════
 

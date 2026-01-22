@@ -1,14 +1,17 @@
 ═══════════════════════════════════════════════════════════════
-  COMANDOS SCP - AUTOMAÇÃO DUE_TODAY
+  COMANDOS SCP - CORRIGIR EXIBIÇÃO DO QR CODE
   Execute no PowerShell ou Terminal
   
-  ⚠️  NOVA FUNCIONALIDADE: Automação de envio para empréstimos que vencem hoje
-  Horários: 5:30 AM, 12:00 PM, 18:30 PM
+  ⚠️  CORREÇÃO: Melhorado tratamento e formatação do QR Code
+  - Garantir que QR Code está no formato correto (data:image/png;base64,)
+  - Melhor tratamento de erros no frontend
+  - Logs mais detalhados para debug
+  - Verificação de formato antes de exibir
 ═══════════════════════════════════════════════════════════════
 
-1️⃣  TRANSFERIR src/services/loanService.js
+1️⃣  TRANSFERIR src/bot/whatsappBot.js
 ───────────────────────────────────────────────────────────────
-scp src/services/loanService.js root@212.85.19.210:/var/www/nexusbot/src/services/
+scp src/bot/whatsappBot.js root@212.85.19.210:/var/www/nexusbot/src/bot/
 
 
 2️⃣  TRANSFERIR src/routes/api.js
@@ -16,9 +19,9 @@ scp src/services/loanService.js root@212.85.19.210:/var/www/nexusbot/src/service
 scp src/routes/api.js root@212.85.19.210:/var/www/nexusbot/src/routes/
 
 
-3️⃣  TRANSFERIR src/index.js
+3️⃣  TRANSFERIR public/script.js
 ───────────────────────────────────────────────────────────────
-scp src/index.js root@212.85.19.210:/var/www/nexusbot/src/
+scp public/script.js root@212.85.19.210:/var/www/nexusbot/public/
 
 
 4️⃣  REINICIAR O BOT
@@ -30,10 +33,25 @@ ssh root@212.85.19.210 "cd /var/www/nexusbot && pm2 restart nexusbot"
   COMANDO COMPLETO (EXECUTAR TUDO DE UMA VEZ):
 ═══════════════════════════════════════════════════════════════
 
-scp src/services/loanService.js root@212.85.19.210:/var/www/nexusbot/src/services/ && scp src/routes/api.js root@212.85.19.210:/var/www/nexusbot/src/routes/ && scp src/index.js root@212.85.19.210:/var/www/nexusbot/src/ && ssh root@212.85.19.210 "cd /var/www/nexusbot && pm2 restart nexusbot"
+scp src/bot/whatsappBot.js root@212.85.19.210:/var/www/nexusbot/src/bot/ && scp src/routes/api.js root@212.85.19.210:/var/www/nexusbot/src/routes/ && scp public/script.js root@212.85.19.210:/var/www/nexusbot/public/ && ssh root@212.85.19.210 "cd /var/www/nexusbot && pm2 restart nexusbot"
 
 
 ═══════════════════════════════════════════════════════════════
-
-
+  VERIFICAÇÃO:
+═══════════════════════════════════════════════════════════════
+  
+  Após transferir, verifique os logs:
+  ssh root@212.85.19.210 "pm2 logs nexusbot --lines 50"
+  
+  Procure por:
+  - "📱 QR CODE GERADO"
+  - "✅ QR Code armazenado"
+  - "GET /api/qr-code"
+  
+  Se o QR Code não aparecer, verifique:
+  1. Se o bot está inicializando corretamente
+  2. Se o QR Code está sendo gerado (veja logs)
+  3. Se há erros no console do navegador (F12)
+  
+═══════════════════════════════════════════════════════════════
 

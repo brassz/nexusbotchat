@@ -839,14 +839,25 @@ async function loadQRCode() {
         console.log('QR Code response:', { 
             success: data.success, 
             hasQRCode: !!data.qrCode, 
+            qrCodeLength: data.qrCode ? data.qrCode.length : 0,
             isConnected: data.isConnected,
             message: data.message 
         });
 
+        // Verificar se o QR Code existe e está no formato correto
         if (data.success && data.qrCode) {
+            // Verificar se o QR Code está no formato correto
+            let qrCodeImage = data.qrCode;
+            
+            // Se não começar com data:image, adicionar o prefixo
+            if (!qrCodeImage.startsWith('data:image')) {
+                qrCodeImage = `data:image/png;base64,${data.qrCode}`;
+            }
+            
+            console.log('✅ QR Code válido encontrado, exibindo no painel...');
             qrCodeBox.innerHTML = `
                 <div style="text-align: center; padding: 20px;">
-                    <img src="data:image/png;base64,${data.qrCode}" alt="QR Code WhatsApp" style="max-width: 100%; max-height: 400px; height: auto; border: 3px solid var(--primary-color); border-radius: 12px; padding: 15px; background: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    <img src="${qrCodeImage}" alt="QR Code WhatsApp" style="max-width: 100%; max-height: 400px; height: auto; border: 3px solid var(--primary-color); border-radius: 12px; padding: 15px; background: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);" onerror="console.error('Erro ao carregar imagem QR Code'); this.parentElement.innerHTML='<div class=\\'qr-loading\\'><i class=\\'fas fa-exclamation-circle\\'></i><p>Erro ao exibir QR Code</p></div>';">
                     <p style="margin-top: 20px; font-size: 14px; color: var(--text-secondary); font-weight: 500;">
                         <i class="fas fa-info-circle"></i> Escaneie este QR Code com o WhatsApp
                     </p>
@@ -857,6 +868,13 @@ async function loadQRCode() {
             `;
             updateConnectionStatus(false, 'Aguardando conexão...');
             console.log('✅ QR Code exibido com sucesso no painel');
+            
+            // Se não estiver na aba QR Code, mudar automaticamente para mostrar o QR Code
+            if (currentTab !== 'qr-code') {
+                console.log('📱 QR Code gerado! Mudando para aba QR Code automaticamente...');
+                switchTab('qr-code');
+                showToast('QR Code gerado! Escaneie para conectar o WhatsApp.', 'info');
+            }
         } else if (data.isConnected) {
             qrCodeBox.innerHTML = `
                 <div class="qr-connected">
@@ -995,7 +1013,8 @@ async function sendAllMessages() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
-            }
+            },
+            body: JSON.stringify({ company: currentCompany })
         });
 
         const data = await response.json();

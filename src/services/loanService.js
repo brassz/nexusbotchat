@@ -1,6 +1,61 @@
 import { getSupabaseClient, getAvailableCompanies } from '../config/database.js';
 
 /**
+ * Calcula o valor restante do empréstimo
+ * Tenta diferentes campos e cálculos para obter o valor correto
+ * @param {Object} loan - Dados do empréstimo
+ * @returns {number} Valor restante
+ */
+function calculateRemainingAmount(loan) {
+  // 1. Se existe remaining_amount diretamente e é maior que 0, usar
+  if (loan.remaining_amount !== null && loan.remaining_amount !== undefined) {
+    const remaining = parseFloat(loan.remaining_amount);
+    if (!isNaN(remaining) && remaining > 0) {
+      return remaining;
+    }
+  }
+  
+  // 2. Se existe total_amount, tentar calcular com paid_amount
+  if (loan.total_amount !== null && loan.total_amount !== undefined) {
+    const total = parseFloat(loan.total_amount);
+    if (!isNaN(total) && total > 0) {
+      // Tentar diferentes nomes de campos para valor pago
+      const paid = parseFloat(
+        loan.paid_amount || 
+        loan.amount_paid || 
+        loan.paid || 
+        0
+      ) || 0;
+      const remaining = total - paid;
+      if (remaining > 0) {
+        return remaining;
+      }
+    }
+  }
+  
+  // 3. Se existe amount (sem paid_amount), usar amount como restante
+  if (loan.amount !== null && loan.amount !== undefined) {
+    const amount = parseFloat(loan.amount);
+    if (!isNaN(amount) && amount > 0) {
+      // Tentar calcular se houver paid_amount
+      const paid = parseFloat(
+        loan.paid_amount || 
+        loan.amount_paid || 
+        loan.paid || 
+        0
+      ) || 0;
+      const remaining = amount - paid;
+      if (remaining > 0) {
+        return remaining;
+      }
+    }
+  }
+  
+  // 4. Se não encontrou nenhum valor, retornar 0
+  return 0;
+}
+
+/**
  * Busca empréstimos com status overdue ou due_today
  * @param {Date} targetDate - Data para verificar vencimentos (opcional, usa hoje se não fornecido)
  * @param {string} company - Empresa para buscar (franca, litoral, mogiana, imperatriz)
@@ -46,12 +101,20 @@ export async function getOverdueAndDueTodayLoans(targetDate = null, company = 'f
         const isDueToday = loanDueDate === todayStr;
         const isOverdue = daysOverdue > 0 || loan.status === 'overdue';
 
+        // Verificar se o empréstimo tem valor restante > 0
+        const remainingAmount = calculateRemainingAmount(loan);
+        if (remainingAmount <= 0) {
+          return; // Pular empréstimos sem valor restante
+        }
+
         if (isOverdue || isDueToday) {
           const loanData = {
             ...loan,
             client: loan.clients,
             days_overdue: daysOverdue,
-            loan_type: isDueToday ? 'due_today' : 'overdue'
+            loan_type: isDueToday ? 'due_today' : 'overdue',
+            company: company,
+            remaining_amount: remainingAmount // Garantir que sempre temos o valor restante
           };
 
           if (isDueToday && !isOverdue) {
@@ -144,13 +207,21 @@ export async function getOverdueAndDueTodayLoans(targetDate = null, company = 'f
     if (overdueLoansTable) {
       overdueLoansTable.forEach(loan => {
         if (loan.clients) {
+          // Verificar se o empréstimo tem valor restante > 0
+          const remainingAmount = calculateRemainingAmount(loan);
+          if (remainingAmount <= 0) {
+            return; // Pular empréstimos sem valor restante
+          }
+          
           const daysOverdue = loan.days_overdue || calculateDaysOverdue(loan.due_date);
           allLoans.push({
             ...loan,
             client: loan.clients,
             loan_type: 'overdue_table',
             days_overdue: daysOverdue,
-            id: loan.loan_id || loan.id
+            id: loan.loan_id || loan.id,
+            company: company,
+            remaining_amount: remainingAmount // Garantir que sempre temos o valor restante
           });
         }
       });
@@ -161,6 +232,12 @@ export async function getOverdueAndDueTodayLoans(targetDate = null, company = 'f
     if (partialPaidLoansWithClients && partialPaidLoansWithClients.length > 0) {
       partialPaidLoansWithClients.forEach(loan => {
         if (loan.clients) {
+          // Verificar se o empréstimo tem valor restante > 0 (já filtrado na query, mas garantir)
+          const remainingAmount = calculateRemainingAmount(loan);
+          if (remainingAmount <= 0) {
+            return; // Pular empréstimos sem valor restante
+          }
+          
           // Normalizar due_date para comparação
           const loanDueDate = normalizeDate(loan.due_date);
           const daysOverdue = calculateDaysOverdue(loan.due_date);
@@ -174,7 +251,9 @@ export async function getOverdueAndDueTodayLoans(targetDate = null, company = 'f
               client: loan.clients,
               loan_type: isDueToday ? 'due_today' : 'partial_paid',
               days_overdue: daysOverdue,
-              id: loan.loan_id || loan.id
+              id: loan.loan_id || loan.id,
+              company: company,
+              remaining_amount: remainingAmount // Garantir que sempre temos o valor restante
             });
           }
         }
@@ -255,6 +334,12 @@ export async function getDueTodayLoans(company = 'franca') {
         const daysOverdue = calculateDaysOverdue(loan.due_date);
         const isDueToday = loanDueDate === todayStr;
         
+        // Verificar se o empréstimo tem valor restante > 0
+        const remainingAmount = calculateRemainingAmount(loan);
+        if (remainingAmount <= 0) {
+          return; // Pular empréstimos sem valor restante
+        }
+        
         // Apenas adicionar se vence hoje E não está vencido
         if (isDueToday && daysOverdue === 0) {
           dueTodayLoans.push({
@@ -262,7 +347,8 @@ export async function getDueTodayLoans(company = 'franca') {
             client: loan.clients,
             days_overdue: 0,
             loan_type: 'due_today',
-            company: company
+            company: company,
+            remaining_amount: remainingAmount // Garantir que sempre temos o valor restante
           });
         }
       });
@@ -293,6 +379,12 @@ export async function getDueTodayLoans(company = 'franca') {
           const clientsMap = new Map(clientsData.map(c => [c.id, c]));
           
           partialPaidLoans.forEach(loan => {
+            // Verificar se o empréstimo tem valor restante > 0 (já filtrado na query, mas garantir)
+            const remainingAmount = calculateRemainingAmount(loan);
+            if (remainingAmount <= 0) {
+              return; // Pular empréstimos sem valor restante
+            }
+            
             const client = clientsMap.get(loan.client_id);
             if (client) {
               dueTodayLoans.push({
@@ -301,7 +393,8 @@ export async function getDueTodayLoans(company = 'franca') {
                 loan_type: 'due_today',
                 days_overdue: 0,
                 company: company,
-                id: loan.loan_id || loan.id
+                id: loan.loan_id || loan.id,
+                remaining_amount: remainingAmount // Garantir que sempre temos o valor restante
               });
             }
           });
@@ -385,11 +478,22 @@ export async function getLoansByDueDate(dueDate, company = 'franca') {
       return [];
     }
 
-    return data.map(loan => ({
-      ...loan,
-      client: loan.clients,
-      days_overdue: calculateDaysOverdue(loan.due_date)
-    }));
+    // Filtrar apenas empréstimos com valor restante > 0
+    return data
+      .map(loan => {
+        const remainingAmount = calculateRemainingAmount(loan);
+        if (remainingAmount <= 0) {
+          return null; // Filtrar empréstimos sem valor restante
+        }
+        return {
+          ...loan,
+          client: loan.clients,
+          days_overdue: calculateDaysOverdue(loan.due_date),
+          company: company,
+          remaining_amount: remainingAmount // Garantir que sempre temos o valor restante
+        };
+      })
+      .filter(loan => loan !== null); // Remover nulls
   } catch (error) {
     console.error('Erro ao buscar empréstimos por data:', error);
     return [];

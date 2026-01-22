@@ -112,8 +112,10 @@ router.get('/loans/by-date', async (req, res) => {
  */
 router.post('/messages/send-overdue', async (req, res) => {
   try {
-    const result = await sendMessagesToOverdueClients();
-    res.json({ success: true, ...result });
+    // Obter empresa do body ou query, padrão 'franca'
+    const company = req.body.company || req.query.company || 'franca';
+    const result = await sendMessagesToOverdueClients(company);
+    res.json({ success: true, ...result, company });
   } catch (error) {
     console.error('Erro ao enviar mensagens:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -212,7 +214,7 @@ router.post('/messages/send-single', async (req, res) => {
  */
 router.get('/preview-message', async (req, res) => {
   try {
-    const { loanId } = req.query;
+    const { loanId, company } = req.query;
     
     if (!loanId) {
       return res.status(400).json({ 
@@ -221,24 +223,121 @@ router.get('/preview-message', async (req, res) => {
       });
     }
 
-    // Buscar empréstimo específico
-    const loans = await getOverdueAndDueTodayLoans();
-    const loan = loans.find(l => l.id === loanId || l.loan_id === loanId);
+    // Usar empresa fornecida ou padrão 'franca'
+    const selectedCompany = company || 'franca';
+
+    // Buscar empréstimo específico da empresa correta
+    const loans = await getOverdueAndDueTodayLoans(null, selectedCompany);
+    
+    // Tentar encontrar o empréstimo por diferentes campos de ID
+    let loan = loans.find(l => {
+      const id = String(l.id || '');
+      const loanIdStr = String(l.loan_id || '');
+      const searchId = String(loanId);
+      // Comparar IDs de forma mais flexível
+      return id === searchId || 
+             loanIdStr === searchId || 
+             id.replace(/-/g, '') === searchId.replace(/-/g, '') ||
+             loanIdStr.replace(/-/g, '') === searchId.replace(/-/g, '');
+    });
+    
+    // Se não encontrou, tentar buscar diretamente no banco pela empresa selecionada
+    if (!loan) {
+      console.log(`Empréstimo ${loanId} não encontrado em overdue/due_today da empresa ${selectedCompany}, tentando buscar diretamente...`);
+      try {
+        const { getSupabaseClient } = await import('../config/database.js');
+        const supabase = getSupabaseClient(selectedCompany);
+        
+        // Tentar buscar na tabela loans
+        const { data: loanData, error: loanError } = await supabase
+          .from('loans')
+          .select(`
+            *,
+            clients (
+              id,
+              name,
+              phone,
+              cpf,
+              email
+            )
+          `)
+          .or(`id.eq.${loanId},loan_id.eq.${loanId}`)
+          .limit(1)
+          .single();
+        
+        if (!loanError && loanData && loanData.clients) {
+          loan = {
+            ...loanData,
+            client: loanData.clients,
+            company: selectedCompany,
+            days_overdue: 0
+          };
+        }
+      } catch (err) {
+        console.error('Erro ao buscar empréstimo diretamente:', err);
+      }
+    }
     
     if (!loan || !loan.client) {
       return res.status(404).json({ 
         success: false, 
-        error: 'Empréstimo não encontrado' 
+        error: `Empréstimo não encontrado para a empresa ${selectedCompany}` 
       });
     }
 
     const message = generateMessage(loan, loan.client);
-    res.json({ success: true, message, loan, client: loan.client });
+    res.json({ 
+      success: true, 
+      message, 
+      loan: {
+        ...loan,
+        remaining_amount: loan.remaining_amount || calculateRemainingAmount(loan)
+      }, 
+      client: loan.client 
+    });
   } catch (error) {
     console.error('Erro ao gerar preview:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// Função auxiliar para calcular valor restante (mesma lógica do messageService)
+function calculateRemainingAmount(loan) {
+  if (loan.remaining_amount !== null && loan.remaining_amount !== undefined) {
+    const remaining = parseFloat(loan.remaining_amount);
+    if (!isNaN(remaining) && remaining > 0) {
+      return remaining;
+    }
+  }
+  
+  if (loan.total_amount !== null && loan.total_amount !== undefined) {
+    const total = parseFloat(loan.total_amount);
+    if (!isNaN(total) && total > 0) {
+      const paid = parseFloat(loan.paid_amount || loan.amount_paid || loan.paid || 0) || 0;
+      const remaining = total - paid;
+      if (remaining > 0) {
+        return remaining;
+      }
+      if (remaining <= 0 && total > 0) {
+        return total;
+      }
+    }
+  }
+  
+  if (loan.amount !== null && loan.amount !== undefined) {
+    const amount = parseFloat(loan.amount);
+    if (!isNaN(amount) && amount > 0) {
+      const paid = parseFloat(loan.paid_amount || loan.amount_paid || loan.paid || 0) || 0;
+      const remaining = amount - paid;
+      if (remaining > 0) {
+        return remaining;
+      }
+      return amount;
+    }
+  }
+  
+  return 0;
+}
 
 /**
  * GET /api/qr-code
@@ -249,18 +348,10 @@ router.get('/qr-code', async (req, res) => {
     const qrCode = getQRCode();
     const isConnected = isBotConnected();
     
-    console.log('GET /api/qr-code - QR Code:', qrCode ? 'Existe' : 'Não existe', '| Conectado:', isConnected);
+    console.log('GET /api/qr-code - QR Code:', qrCode ? `Existe (${qrCode.length} chars)` : 'Não existe', '| Conectado:', isConnected);
     
-    if (!qrCode && !isConnected) {
-      return res.json({ 
-        success: false, 
-        qrCode: null, 
-        isConnected: false,
-        message: 'QR Code ainda não foi gerado. Aguarde o bot inicializar...' 
-      });
-    }
-
-    if (isConnected && !qrCode) {
+    // Se está conectado, não precisa de QR Code
+    if (isConnected) {
       return res.json({ 
         success: true, 
         qrCode: null, 
@@ -269,16 +360,34 @@ router.get('/qr-code', async (req, res) => {
       });
     }
 
+    // Se tem QR Code, retornar
     if (qrCode) {
-      console.log('Retornando QR Code (tamanho base64):', qrCode.length);
-      return res.json({ success: true, qrCode, isConnected: false });
+      // Garantir que o QR Code está no formato correto
+      let qrCodeToReturn = qrCode;
+      
+      // Se o QR Code já tem o prefixo data:image, usar direto
+      // Se não, pode ser que precise extrair apenas o base64
+      if (qrCode.startsWith('data:image')) {
+        qrCodeToReturn = qrCode;
+      } else {
+        // Se não tem prefixo, adicionar
+        qrCodeToReturn = `data:image/png;base64,${qrCode}`;
+      }
+      
+      console.log('✅ Retornando QR Code (tamanho final):', qrCodeToReturn.length);
+      return res.json({ 
+        success: true, 
+        qrCode: qrCodeToReturn, 
+        isConnected: false 
+      });
     }
 
-    res.json({ 
+    // Se não tem QR Code e não está conectado, ainda está inicializando
+    return res.json({ 
       success: false, 
       qrCode: null, 
       isConnected: false,
-      message: 'QR Code não disponível' 
+      message: 'QR Code ainda não foi gerado. Aguarde o bot inicializar...' 
     });
   } catch (error) {
     console.error('Erro ao obter QR Code:', error);

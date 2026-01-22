@@ -1,0 +1,51 @@
+═══════════════════════════════════════════════════════════════
+  COMANDOS SCP - CORRIGIR ERRO "detached Frame"
+  Execute no PowerShell ou Terminal
+  
+  ⚠️  CORREÇÃO: Melhorado tratamento de erro "detached Frame"
+  - Verifica se o cliente está válido antes de enviar
+  - Detecta quando o navegador/frame foi desconectado
+  - Não tenta métodos alternativos quando frame está desconectado
+  - Mensagens de erro mais claras
+  - Validação melhorada de números de telefone
+═══════════════════════════════════════════════════════════════
+
+1️⃣  TRANSFERIR src/bot/whatsappBot.js
+───────────────────────────────────────────────────────────────
+scp src/bot/whatsappBot.js root@212.85.19.210:/var/www/nexusbot/src/bot/
+
+
+2️⃣  REINICIAR O BOT
+───────────────────────────────────────────────────────────────
+ssh root@212.85.19.210 "cd /var/www/nexusbot && pm2 restart nexusbot"
+
+
+═══════════════════════════════════════════════════════════════
+  COMANDO COMPLETO (EXECUTAR TUDO DE UMA VEZ):
+═══════════════════════════════════════════════════════════════
+
+scp src/bot/whatsappBot.js root@212.85.19.210:/var/www/nexusbot/src/bot/ && ssh root@212.85.19.210 "cd /var/www/nexusbot && pm2 restart nexusbot"
+
+
+═══════════════════════════════════════════════════════════════
+  NOTAS:
+═══════════════════════════════════════════════════════════════
+  
+  O erro "detached Frame" ocorre quando:
+  - O navegador foi fechado ou desconectado
+  - A sessão do WhatsApp foi desconectada
+  - Há um problema de sincronização entre as chamadas
+  
+  A correção agora:
+  - Verifica se o cliente está válido antes de cada envio
+  - Detecta o erro e não tenta métodos alternativos quando frame está desconectado
+  - Fornece mensagens de erro mais claras
+  - Valida melhor os números de telefone antes de formatar
+  
+  Se o erro persistir, pode ser necessário:
+  - Reiniciar o bot completamente
+  - Verificar se o WhatsApp está conectado
+  - Verificar se há processos do navegador travados
+  
+═══════════════════════════════════════════════════════════════
+
